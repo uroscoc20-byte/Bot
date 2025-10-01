@@ -1,0 +1,127 @@
+import discord
+from discord.ext import commands
+from database import db
+
+# ---------- COG ----------
+class SetupModule(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    # ---------- Roles Setup ----------
+    @commands.slash_command(name="setup_roles", description="Configure bot roles (Admin only)")
+    async def setup_roles(
+        self, ctx: discord.ApplicationContext,
+        admin: discord.Option(discord.Role, "Admin role"),
+        staff: discord.Option(discord.Role, "Staff role"),
+        helper: discord.Option(discord.Role, "Helper role"),
+        restricted: discord.Option(str, "Restricted role IDs comma-separated", required=False)
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+
+        restricted_ids = [int(r.strip()) for r in restricted.split(",")] if restricted else []
+        await db.set_roles(admin.id, staff.id, helper.id, restricted_ids)
+        await ctx.respond("✅ Roles configuration updated!")
+
+    # ---------- Transcript Channel ----------
+    @commands.slash_command(name="setup_transcript", description="Set transcript channel (Admin only)")
+    async def setup_transcript(
+        self, ctx: discord.ApplicationContext,
+        channel: discord.Option(discord.TextChannel, "Select transcript channel")
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        await db.set_transcript_channel(channel.id)
+        await ctx.respond(f"✅ Transcript channel set to {channel.mention}")
+
+    # ---------- Category Setup ----------
+    @commands.slash_command(name="setup_category_add", description="Add a new ticket category (Admin only)")
+    async def setup_category_add(
+        self, ctx: discord.ApplicationContext,
+        name: discord.Option(str, "Category name"),
+        questions: discord.Option(str, "Questions separated by |"),
+        points: discord.Option(int, "Points for helpers"),
+        slots: discord.Option(int, "Number of helper slots")
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        questions_list = [q.strip() for q in questions.split("|")]
+        await db.add_category(name, questions_list, points, slots)
+        await ctx.respond(f"✅ Category `{name}` added with {slots} slots and {points} points.")
+
+    @commands.slash_command(name="setup_category_remove", description="Remove a ticket category (Admin only)")
+    async def setup_category_remove(
+        self, ctx: discord.ApplicationContext,
+        name: discord.Option(str, "Category name to remove")
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        removed = await db.remove_category(name)
+        if removed:
+            await ctx.respond(f"✅ Category `{name}` removed.")
+        else:
+            await ctx.respond(f"⚠ Category `{name}` does not exist.", ephemeral=True)
+
+    @commands.slash_command(name="setup_category_list", description="List all ticket categories")
+    async def setup_category_list(self, ctx: discord.ApplicationContext):
+        categories = await db.get_categories()
+        if not categories:
+            await ctx.respond("No categories configured.")
+            return
+        embed = discord.Embed(title="Ticket Categories", color=0x00FFAA)
+        for cat in categories:
+            questions_text = "\n".join(f"- {q}" for q in cat["questions"])
+            embed.add_field(
+                name=f"{cat['name']} — {cat['points']} pts — {cat['slots']} slots",
+                value=questions_text,
+                inline=False
+            )
+        await ctx.respond(embed=embed)
+
+    # ---------- Custom Commands ----------
+    @commands.slash_command(name="setup_custom_add", description="Add a custom command (Admin only)")
+    async def setup_custom_add(
+        self, ctx: discord.ApplicationContext,
+        name: discord.Option(str, "Command name"),
+        text: discord.Option(str, "Text to display"),
+        image: discord.Option(str, "Optional image URL", required=False)
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        await db.add_custom_command(name, text, image)
+        await ctx.respond(f"✅ Custom command `{name}` added.")
+
+    @commands.slash_command(name="setup_custom_remove", description="Remove a custom command (Admin only)")
+    async def setup_custom_remove(
+        self, ctx: discord.ApplicationContext,
+        name: discord.Option(str, "Command name to remove")
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        removed = await db.remove_custom_command(name)
+        if removed:
+            await ctx.respond(f"✅ Custom command `{name}` removed.")
+        else:
+            await ctx.respond(f"⚠ Custom command `{name}` does not exist.", ephemeral=True)
+
+    @commands.slash_command(name="setup_custom_list", description="List all custom commands")
+    async def setup_custom_list(self, ctx: discord.ApplicationContext):
+        commands_list = await db.get_custom_commands()
+        if not commands_list:
+            await ctx.respond("No custom commands configured.")
+            return
+        embed = discord.Embed(title="Custom Commands", color=0xAA00FF)
+        for cmd in commands_list:
+            img_text = cmd["image"] if cmd["image"] else "No image"
+            embed.add_field(name=cmd["name"], value=f"Text: {cmd['text']}\nImage: {img_text}", inline=False)
+        await ctx.respond(embed=embed)
+
+# ---------- SETUP ----------
+def setup(bot):
+    bot.add_cog(SetupModule(bot))
