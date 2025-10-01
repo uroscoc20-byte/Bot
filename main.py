@@ -2,13 +2,11 @@
 import discord
 from discord.ext import commands
 import os
-from dotenv import load_dotenv
 import webserver
 import asyncio
 from database import db
 
 # ---------- LOAD ENV ----------
-load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:
     print("ERROR: DISCORD_BOT_TOKEN not set!")
