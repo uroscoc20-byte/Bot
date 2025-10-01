@@ -6,10 +6,11 @@ import webserver
 import asyncio
 from database import db
 
-# ---------- LOAD ENV ----------
+# ---------- DISCORD TOKEN ----------
+# Token is stored in Render's Environment Variables
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:
-    print("ERROR: DISCORD_BOT_TOKEN not set!")
+    print("ERROR: DISCORD_BOT_TOKEN not set in Render Environment Variables!")
     exit(1)
 
 # ---------- BOT INTENTS ----------
@@ -17,18 +18,18 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="/", intents=intents)
 
-# ---------- EXTENSIONS ----------
+# ---------- COG EXTENSIONS ----------
 initial_extensions = [
     "setup",
     "tickets",
     "points",
     "custom_commands",
-    "talk"  # optional, if you have a talk module
+    "talk"  # optional
 ]
 
 # ---------- ASYNC MAIN ----------
 async def main():
-    # Initialize the database
+    # Initialize database
     await db.init()
     print("✅ Database initialized.")
 
@@ -40,11 +41,11 @@ async def main():
         except Exception as e:
             print(f"❌ Failed to load extension {ext}: {e}")
 
-    # Start Render webserver (healthcheck)
+    # Start Render webserver for healthchecks
     webserver.start()
     print("✅ Webserver started for Render healthchecks.")
 
-    # Run the bot
+    # Start Discord bot
     await bot.start(TOKEN)
 
 # ---------- RUN ----------
