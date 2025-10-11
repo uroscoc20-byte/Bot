@@ -36,6 +36,41 @@ class SetupModule(commands.Cog):
         await db.set_transcript_channel(channel.id)
         await ctx.respond(f"✅ Transcript channel set to {channel.mention}")
 
+    # ---------- Panel customization ----------
+    @commands.slash_command(name="setup_panel", description="Customize ticket panel text and color (Admin only)")
+    async def setup_panel(
+        self,
+        ctx: discord.ApplicationContext,
+        text: discord.Option(str, "Panel description text", required=False),
+        color: discord.Option(str, "Hex color like #5865F2", required=False)
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        color_value = None
+        if color:
+            try:
+                color_value = int(color.lstrip("#"), 16)
+            except Exception:
+                await ctx.respond("Invalid color. Use hex like #5865F2.", ephemeral=True)
+                return
+        await db.set_panel_config(text=text, color=color_value)
+        await ctx.respond("✅ Panel configuration updated.")
+
+    # ---------- Maintenance toggle ----------
+    @commands.slash_command(name="setup_maintenance", description="Enable/disable ticket opening (Admin only)")
+    async def setup_maintenance(
+        self,
+        ctx: discord.ApplicationContext,
+        enabled: discord.Option(bool, "Enable maintenance (disable tickets)?"),
+        message: discord.Option(str, "Message to show", required=False)
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        await db.set_maintenance(enabled, message)
+        await ctx.respond("✅ Maintenance settings updated.")
+
     # ---------- Category Setup ----------
     @commands.slash_command(name="setup_category_add", description="Add a new ticket category (Admin only)")
     async def setup_category_add(

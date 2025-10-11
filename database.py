@@ -83,6 +83,24 @@ class Database:
         data = await self.load_config("transcript_channel")
         return data["id"] if data else None
 
+    # ---------- PANEL CONFIG / MAINTENANCE ----------
+    async def set_panel_config(self, text: str = None, color: int = None):
+        current = await self.load_config("panel_config") or {}
+        if text is not None:
+            current["text"] = text
+        if color is not None:
+            current["color"] = color
+        await self.save_config("panel_config", current)
+
+    async def get_panel_config(self):
+        return await self.load_config("panel_config") or {"text": "Ticket panel", "color": 0x7289DA}
+
+    async def set_maintenance(self, enabled: bool, message: str = None):
+        await self.save_config("maintenance", {"enabled": enabled, "message": message or "Tickets are temporarily disabled."})
+
+    async def get_maintenance(self):
+        return await self.load_config("maintenance") or {"enabled": False, "message": "Tickets are temporarily disabled."}
+
     # ---------- CATEGORIES ----------
     async def add_category(self, name, questions, points, slots):
         questions_json = json.dumps(questions)

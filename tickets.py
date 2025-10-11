@@ -125,9 +125,16 @@ class TicketModule(commands.Cog):
         if not any(r.id == staff_role or r.id == admin_role for r in ctx.user.roles):
             await ctx.respond("You don't have permission to deploy ticket panel.", ephemeral=True)
             return
+        maintenance = await db.get_maintenance()
+        if maintenance.get("enabled"):
+            await ctx.respond(maintenance.get("message", "Tickets are disabled."), ephemeral=True)
+            return
         categories = await db.get_categories()
+        panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
-        await ctx.respond("Ticket panel deployed!", view=view)
+        embed = discord.Embed(description=panel_cfg.get("text", "Ticket panel"), color=panel_cfg.get("color", 0x7289DA))
+        embed.title = "Open a Ticket"
+        await ctx.respond(embed=embed, view=view)
 
     # ---------- BUTTON HANDLER ----------
     @commands.Cog.listener()
