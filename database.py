@@ -1,21 +1,3 @@
-# database.py
-from flask import Flask
-import os
-import threading
-
-app = Flask("")
-
-@app.route("/")
-def home():
-    return "Bot is running!", 200
-
-def run():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
-
-def start():
-    threading.Thread(target=run).start()
-File: database.py
 import aiosqlite
 import json
 
@@ -78,19 +60,24 @@ class Database:
         await self.db.commit()
 
     # ---------- ROLES ----------
-    async def set_roles(self, admin, staff, helper, restricted_ids):
+    async def set_roles(self, admin, staff, helper, restricted_ids, booster=None):
         roles_data = {
             "admin": admin,
             "staff": staff,
             "helper": helper,
-            "restricted": restricted_ids
+            "restricted": restricted_ids,
+            "booster": booster
         }
         await self.save_config("roles", roles_data)
 
     async def get_roles(self):
         roles = await self.load_config("roles")
         if not roles:
-            return {"admin": None, "staff": None, "helper": None, "restricted": []}
+            return {"admin": None, "staff": None, "helper": None, "restricted": [], "booster": None}
+        if "booster" not in roles:
+            roles["booster"] = None
+        if "restricted" not in roles:
+            roles["restricted"] = []
         return roles
 
     # ---------- TRANSCRIPT ----------
@@ -238,7 +225,6 @@ class Database:
         )
         await self.db.commit()
         return last
-
 
 
 db = Database()
