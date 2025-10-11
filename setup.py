@@ -36,6 +36,19 @@ class SetupModule(commands.Cog):
         await db.set_transcript_channel(channel.id)
         await ctx.respond(f"✅ Transcript channel set to {channel.mention}")
 
+    # ---------- Ticket Category (where ticket channels are created) ----------
+    @commands.slash_command(name="setup_ticket_category", description="Set Discord category for tickets (Admin only)")
+    async def setup_ticket_category(
+        self,
+        ctx: discord.ApplicationContext,
+        category: discord.Option(discord.CategoryChannel, "Select ticket parent category")
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        await db.set_ticket_category(category.id)
+        await ctx.respond(f"✅ Ticket category set to {category.mention}")
+
     # ---------- Panel customization ----------
     @commands.slash_command(name="setup_panel", description="Customize ticket panel text and color (Admin only)")
     async def setup_panel(

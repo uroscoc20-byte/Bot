@@ -23,8 +23,10 @@ DEFAULT_HELPER_SLOTS = {
 }
 DEFAULT_SLOTS = 3
 DEFAULT_QUESTIONS = [
-    "What do you need help with?*",
-    "Additional information",
+    "In-game name?*",
+    "Server name?*",
+    "Room number?*",
+    "Anything else?",
 ]
 
 def get_fallback_category(category_name: str):
@@ -92,8 +94,9 @@ class TicketModal(Modal):
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True)
         }
-
-        ticket_channel = await guild.create_text_channel(channel_name, overwrites=overwrites)
+        parent_category_id = await db.get_ticket_category()
+        parent_category = guild.get_channel(parent_category_id) if parent_category_id else None
+        ticket_channel = await guild.create_text_channel(channel_name, overwrites=overwrites, category=parent_category)
 
         embed = discord.Embed(
             title=f"{self.category} Ticket #{number}",
@@ -188,7 +191,7 @@ class TicketModule(commands.Cog):
         services = []
         for cat in categories:
             services.append(f"- **{cat['name']}** — {cat.get('points', 0)} points")
-        embed.add_field(name="📋 Available Services", value="\n".join(services) or "No services configured", inline=False)
+        embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
         embed.add_field(name="ℹ️ How it works", value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!", inline=False)
         await ctx.respond(embed=embed, view=view)
 
