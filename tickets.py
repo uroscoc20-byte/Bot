@@ -25,7 +25,7 @@ DEFAULT_SLOTS = 3
 DEFAULT_QUESTIONS = [
     "In-game name?*",
     "Server name?*",
-    "Room number?*",
+    "Room?*",
     "Anything else?",
 ]
 
@@ -216,6 +216,11 @@ class TicketModule(commands.Cog):
                 if ticket_info["helpers"][i] is None:
                     ticket_info["helpers"][i] = interaction.user.id
                     break
+            # Grant channel permissions to helper
+            try:
+                await interaction.channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
+            except Exception:
+                pass
             embed = ticket_info["embed_msg"].embeds[0]
             base_index = len(embed.fields) - len(ticket_info["helpers"])  # helper fields are last
             for i, helper_id in enumerate(ticket_info["helpers"]):
@@ -235,6 +240,11 @@ class TicketModule(commands.Cog):
                 if ticket_info["helpers"][i]:
                     ticket_info["helpers"][i] = None
                     break
+            # Revoke channel permissions from last removed helper if possible
+            try:
+                await interaction.channel.set_permissions(interaction.user, view_channel=False, send_messages=False)
+            except Exception:
+                pass
             embed = ticket_info["embed_msg"].embeds[0]
             base_index = len(embed.fields) - len(ticket_info["helpers"])  # helper fields are last
             for i, helper_id in enumerate(ticket_info["helpers"]):
@@ -273,3 +283,53 @@ class TicketModule(commands.Cog):
 # ---------- SETUP ----------
 def setup(bot):
     bot.add_cog(TicketModule(bot))
+
+# ---------- TEXT COMMANDS (admin only) ----------
+@commands.command(name="create")
+async def create_panel(ctx: commands.Context):
+    # Admin or staff check
+    if not (ctx.author.guild_permissions.administrator):
+        await ctx.send("❌ You don't have permission to create the panel.")
+        return
+    categories = await db.get_categories()
+    if not categories:
+        categories = [{
+            "name": name,
+            "questions": DEFAULT_QUESTIONS,
+            "points": pts,
+            "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
+        } for name, pts in DEFAULT_POINT_VALUES.items()]
+    panel_cfg = await db.get_panel_config()
+    view = TicketPanelView(categories)
+    embed = discord.Embed(
+        title="🎮 In-game Assistance",
+        description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
+        color=panel_cfg.get("color", 0x5865F2),
+    )
+    services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
+    embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
+    embed.add_field(name="ℹ️ How it works", value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!", inline=False)
+    await ctx.send(embed=embed, view=view)
+
+
+@commands.command(name="delete")
+async def delete_panel(ctx: commands.Context, message_id: int = None):
+    if not (ctx.author.guild_permissions.administrator):
+        await ctx.send("❌ You don't have permission to delete panels.")
+        return
+    if not message_id:
+        await ctx.send("❌ Please provide a message ID. Usage: `!delete <message_id>`")
+        return
+    try:
+        msg = await ctx.channel.fetch_message(message_id)
+        if msg.author != ctx.me:
+            await ctx.send("❌ I can only delete my own messages.")
+            return
+        await msg.delete()
+        await ctx.send("✅ Panel deleted.")
+    except discord.NotFound:
+        await ctx.send("❌ Message not found in this channel.")
+    except discord.Forbidden:
+        await ctx.send("❌ I lack permission to delete messages here.")
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
