@@ -51,21 +51,8 @@ async def main():
     # Load all extensions (compatible with discord.py and Pycord)
     for ext in initial_extensions:
         try:
-            result = None
-            try:
-                # Try native loader
-                result = bot.load_extension(ext)
-                if inspect.isawaitable(result):
-                    await result
-            except Exception:
-                # Fallback: manual import and setup
-                module = importlib.import_module(ext)
-                setup_fn = getattr(module, "setup", None)
-                if setup_fn is None:
-                    raise RuntimeError("setup() not found in extension")
-                result = setup_fn(bot)
-                if inspect.isawaitable(result):
-                    await result
+            # Prefer synchronous loader since our cogs use sync setup()
+            bot.load_extension(ext)
             print(f"✅ Loaded extension: {ext}")
         except Exception as e:
             print(f"❌ Failed to load extension {ext}: {e}")
