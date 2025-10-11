@@ -14,14 +14,15 @@ class SetupModule(commands.Cog):
         admin: discord.Option(discord.Role, "Admin role"),
         staff: discord.Option(discord.Role, "Staff role"),
         helper: discord.Option(discord.Role, "Helper role"),
-        restricted: discord.Option(str, "Restricted role IDs comma-separated", required=False)
+        restricted: discord.Option(str, "Restricted role IDs comma-separated", required=False),
+        booster: discord.Option(discord.Role, "Booster role (optional)", required=False)
     ):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You are not allowed to run this.", ephemeral=True)
             return
 
         restricted_ids = [int(r.strip()) for r in restricted.split(",")] if restricted else []
-        await db.set_roles(admin.id, staff.id, helper.id, restricted_ids)
+        await db.set_roles(admin.id, staff.id, helper.id, restricted_ids, booster.id if booster else None)
         await ctx.respond("✅ Roles configuration updated!")
 
     # ---------- Transcript Channel ----------

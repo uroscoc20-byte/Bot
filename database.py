@@ -80,6 +80,11 @@ class Database:
             roles["restricted"] = []
         return roles
 
+    async def set_booster_role(self, booster_role_id: int | None):
+        roles = await self.get_roles()
+        roles["booster"] = booster_role_id
+        await self.save_config("roles", roles)
+
     # ---------- TRANSCRIPT ----------
     async def set_transcript_channel(self, channel_id):
         await self.save_config("transcript_channel", {"id": channel_id})
