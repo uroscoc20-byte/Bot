@@ -109,6 +109,14 @@ class Database:
         data = await self.load_config("prefix")
         return (data or {}).get("value", "!")
 
+    # ---------- TICKET CATEGORY (Discord category to create ticket channels) ----------
+    async def set_ticket_category(self, category_id: int):
+        await self.save_config("ticket_category", {"id": category_id})
+
+    async def get_ticket_category(self):
+        data = await self.load_config("ticket_category")
+        return data["id"] if data else None
+
     # ---------- CATEGORIES ----------
     async def add_category(self, name, questions, points, slots):
         questions_json = json.dumps(questions)
@@ -192,6 +200,10 @@ class Database:
         async with self.db.execute("SELECT user_id, points FROM user_points ORDER BY points DESC") as cursor:
             rows = await cursor.fetchall()
             return [(uid, pts) for uid, pts in rows]
+
+    async def delete_user_points(self, user_id):
+        await self.db.execute("DELETE FROM user_points WHERE user_id = ?", (user_id,))
+        await self.db.commit()
 
     # ---------- TICKET COUNTER ----------
     async def get_ticket_number(self, category):
