@@ -44,28 +44,7 @@ class CustomCommandsModule(commands.Cog):
             embed.set_image(url=data["image"])
         await interaction.response.send_message(embed=embed)
 
-    # Text prefix handler (e.g., !proof)
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        if message.author.bot or not message.guild:
-            return
-        prefix = await db.get_prefix()
-        content = message.content.strip()
-        if not content.startswith(prefix):
-            return
-        name = content[len(prefix):].split()[0].lower()
-        data = self.custom_commands.get(name)
-        if not data:
-            return
-        # Respect permissions? These are public by default.
-        text = data.get("text") or ""
-        image = data.get("image")
-        if image:
-            embed = discord.Embed(description=text or name, color=0xFFD700)
-            embed.set_image(url=image)
-            await message.channel.send(embed=embed)
-        else:
-            await message.channel.send(text)
+    # (Removed text-prefix handling to enforce slash-only custom commands)
 
     # Add /remove/list commands for admins
     @commands.slash_command(name="custom_add", description="Add a custom command (Admin only)")
