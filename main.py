@@ -4,6 +4,8 @@ from discord.ext import commands
 import os
 import webserver
 import asyncio
+import importlib
+import inspect
 from database import db
 
 # ---------- LOAD ENV ----------
@@ -21,7 +23,12 @@ bot = commands.Bot(command_prefix="/", intents=intents)
 @bot.event
 async def on_ready():
     try:
-        await bot.tree.sync()
+        # discord.py style
+        if hasattr(bot, "tree"):
+            await bot.tree.sync()
+        # Pycord style
+        if hasattr(bot, "sync_commands"):
+            await bot.sync_commands()
         print("✅ Slash commands synced.")
     except Exception as e:
         print(f"❌ Slash command sync failed: {e}")
@@ -41,10 +48,24 @@ async def main():
     await db.init()
     print("✅ Database initialized.")
 
-    # Load all extensions
+    # Load all extensions (compatible with discord.py and Pycord)
     for ext in initial_extensions:
         try:
-            await bot.load_extension(ext)  # <-- await is required in discord.py 2.6+
+            result = None
+            try:
+                # Try native loader
+                result = bot.load_extension(ext)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:
+                # Fallback: manual import and setup
+                module = importlib.import_module(ext)
+                setup_fn = getattr(module, "setup", None)
+                if setup_fn is None:
+                    raise RuntimeError("setup() not found in extension")
+                result = setup_fn(bot)
+                if inspect.isawaitable(result):
+                    await result
             print(f"✅ Loaded extension: {ext}")
         except Exception as e:
             print(f"❌ Failed to load extension {ext}: {e}")
