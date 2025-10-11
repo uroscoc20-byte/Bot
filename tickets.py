@@ -139,9 +139,15 @@ class TicketSelect(Select):
         super().__init__(placeholder="Choose ticket type...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        member_roles = [role.id for role in interaction.user.roles]
-        roles = await db.get_roles()
-        if any(r in roles.get("restricted", []) for r in member_roles):
+        member_role_ids = [role.id for role in interaction.user.roles]
+        roles_cfg = await db.get_roles()
+        restricted_ids = []
+        try:
+            restricted_ids = [int(r) for r in roles_cfg.get("restricted", [])] if roles_cfg else []
+        except Exception:
+            restricted_ids = roles_cfg.get("restricted", []) or []
+
+        if any(rid in member_role_ids for rid in restricted_ids):
             await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
             return
 
@@ -163,15 +169,26 @@ class TicketModule(commands.Cog):
 
     @commands.slash_command(name="panel", description="Deploy ticket panel (staff/admin only)")
     async def panel(self, ctx: discord.ApplicationContext):
-        roles = await db.get_roles()
-        staff_role, admin_role = roles.get("staff"), roles.get("admin")
-        if not any(r.id == staff_role or r.id == admin_role for r in ctx.user.roles):
+        roles_cfg = await db.get_roles()
+        staff_role_id = roles_cfg.get("staff")
+        admin_role_id = roles_cfg.get("admin")
+
+        # Allow if guild admin OR has configured staff/admin role
+        is_allowed = ctx.user.guild_permissions.administrator
+        if admin_role_id:
+            is_allowed = is_allowed or any(r.id == admin_role_id for r in ctx.user.roles)
+        if staff_role_id:
+            is_allowed = is_allowed or any(r.id == staff_role_id for r in ctx.user.roles)
+
+        if not is_allowed:
             await ctx.respond("You don't have permission to deploy ticket panel.", ephemeral=True)
             return
+
         maintenance = await db.get_maintenance()
         if maintenance.get("enabled"):
             await ctx.respond(maintenance.get("message", "Tickets are disabled."), ephemeral=True)
             return
+
         categories = await db.get_categories()
         if not categories:
             categories = [{
@@ -231,9 +248,15 @@ class TicketModule(commands.Cog):
 
         # Remove Helper
         elif custom_id == "remove_helper":
-            roles = await db.get_roles()
-            staff_role, admin_role = roles.get("staff"), roles.get("admin")
-            if not any(r.id == staff_role or r.id == admin_role for r in interaction.user.roles):
+            roles_cfg = await db.get_roles()
+            staff_role_id = roles_cfg.get("staff")
+            admin_role_id = roles_cfg.get("admin")
+            is_staff = False
+            if admin_role_id:
+                is_staff = is_staff or any(r.id == admin_role_id for r in interaction.user.roles)
+            if staff_role_id:
+                is_staff = is_staff or any(r.id == staff_role_id for r in interaction.user.roles)
+            if not (interaction.user.guild_permissions.administrator or is_staff):
                 await interaction.response.send_message("Only staff/admin can remove helpers.", ephemeral=True)
                 return
             for i in range(len(ticket_info["helpers"])):
@@ -255,9 +278,15 @@ class TicketModule(commands.Cog):
 
         # Close Ticket
         elif custom_id == "close_ticket":
-            roles = await db.get_roles()
-            staff_role, admin_role = roles.get("staff"), roles.get("admin")
-            if not any(r.id == staff_role or r.id == admin_role for r in interaction.user.roles):
+            roles_cfg = await db.get_roles()
+            staff_role_id = roles_cfg.get("staff")
+            admin_role_id = roles_cfg.get("admin")
+            is_staff = False
+            if admin_role_id:
+                is_staff = is_staff or any(r.id == admin_role_id for r in interaction.user.roles)
+            if staff_role_id:
+                is_staff = is_staff or any(r.id == staff_role_id for r in interaction.user.roles)
+            if not (interaction.user.guild_permissions.administrator or is_staff):
                 await interaction.response.send_message("Only staff/admin can close ticket.", ephemeral=True)
                 return
             if not ticket_info.get("closed_once"):
