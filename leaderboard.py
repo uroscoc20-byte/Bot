@@ -1,8 +1,10 @@
 import discord
 from database import db
 
+ACCENT = 0x5865F2
+
 async def create_leaderboard_embed(page=1, per_page=10):
-    rows = await db.get_leaderboard()  # [(user_id, points), ...]
+    rows = await db.get_leaderboard()
     sorted_points = sorted(rows, key=lambda x: x[1], reverse=True)
     total_pages = max(1, (len(sorted_points) + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
@@ -12,7 +14,7 @@ async def create_leaderboard_embed(page=1, per_page=10):
     embed = discord.Embed(
         title="🏆 Points Leaderboard",
         description=f"Page {page}/{total_pages}",
-        color=0x00FFAA,
+        color=ACCENT,
     )
 
     top_emojis = ["🥇", "🥈", "🥉"]
