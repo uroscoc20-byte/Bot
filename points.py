@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from utils.leaderboard import create_leaderboard_embed  # Modern embed
+from leaderboard import create_leaderboard_embed  # Modern embed
 from database import db
 
 # ---------- COG ----------
@@ -37,21 +37,11 @@ class PointsModule(commands.Cog):
     # ---------- /leaderboard ----------
     @commands.slash_command(name="leaderboard", description="Show points leaderboard")
     async def leaderboard(self, ctx: discord.ApplicationContext, page: discord.Option(int, "Page number", required=False, default=1)):
-        leaderboard = await db.get_leaderboard()
-        if not leaderboard:
+        rows = await db.get_leaderboard()
+        if not rows:
             await ctx.respond("Leaderboard is empty.")
             return
-
-        per_page = 10
-        start = (page-1)*per_page
-        end = start + per_page
-        embed = discord.Embed(title=f"Leaderboard - Page {page}", color=0x00FFAA)
-
-        for idx, (uid, pts) in enumerate(leaderboard[start:end], start=start+1):
-            member = ctx.guild.get_member(uid)
-            name = member.display_name if member else f"User ID {uid}"
-            embed.add_field(name=f"#{idx} - {name}", value=f"{pts} points", inline=False)
-
+        embed = await create_leaderboard_embed(page=page, per_page=10)
         await ctx.respond(embed=embed)
 
     # ---------- /points_reset (admin only) ----------
@@ -64,5 +54,5 @@ class PointsModule(commands.Cog):
         await ctx.respond("Leaderboard has been reset!")
 
 # ---------- SETUP ----------
-def setup(bot):
-    bot.add_cog(PointsModule(bot))
+async def setup(bot):
+    await bot.add_cog(PointsModule(bot))
