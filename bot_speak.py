@@ -12,7 +12,8 @@ class TalkModule(commands.Cog):
         ctx: discord.ApplicationContext,
         channel_input: discord.Option(str, "Channel or thread ID or name"),
         content: discord.Option(str, "Text to send"),
-        image_url: discord.Option(str, "Optional image URL", required=False)
+        image_url: discord.Option(str, "Optional image URL", required=False),
+        as_embed: discord.Option(bool, "Send as embed?", required=False, default=True)
     ):
         # Check admin/staff
         if not ctx.user.guild_permissions.administrator:
@@ -37,11 +38,16 @@ class TalkModule(commands.Cog):
             await ctx.respond("Channel not found.", ephemeral=True)
             return
 
-        embed = discord.Embed(description=content, color=0x00FFAA)
-        if image_url:
-            embed.set_image(url=image_url)
-
-        await target_channel.send(embed=embed)
+        if as_embed:
+            embed = discord.Embed(description=content, color=0x5865F2)
+            if image_url:
+                embed.set_image(url=image_url)
+            await target_channel.send(embed=embed)
+        else:
+            if image_url:
+                await target_channel.send(f"{content}\n{image_url}")
+            else:
+                await target_channel.send(content)
         await ctx.respond(f"Message sent to {target_channel.mention}!", ephemeral=True)
 
 # ---------- SETUP ----------
