@@ -13,6 +13,7 @@ class TalkModule(commands.Cog):
         channel_input: discord.Option(str, "Channel or thread ID or name"),
         content: discord.Option(str, "Text to send"),
         image_url: discord.Option(str, "Optional image URL", required=False),
+        file_attachment: discord.Option(discord.Attachment, "Optional file (image/video)", required=False),
         as_embed: discord.Option(bool, "Send as embed?", required=False, default=True)
     ):
         # Check admin/staff
@@ -38,16 +39,21 @@ class TalkModule(commands.Cog):
             await ctx.respond("Channel not found.", ephemeral=True)
             return
 
+        file_to_send = None
+        if file_attachment:
+            try:
+                file_to_send = await file_attachment.to_file()
+            except Exception:
+                file_to_send = None
+
         if as_embed:
             embed = discord.Embed(description=content, color=0x5865F2)
             if image_url:
                 embed.set_image(url=image_url)
-            await target_channel.send(embed=embed)
+            await target_channel.send(embed=embed, file=file_to_send)
         else:
-            if image_url:
-                await target_channel.send(f"{content}\n{image_url}")
-            else:
-                await target_channel.send(content)
+            text_out = content if not image_url else f"{content}\n{image_url}"
+            await target_channel.send(text_out, file=file_to_send)
         await ctx.respond(f"Message sent to {target_channel.mention}!", ephemeral=True)
 
 # ---------- SETUP ----------
