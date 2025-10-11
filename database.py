@@ -60,22 +60,19 @@ class Database:
         await self.db.commit()
 
     # ---------- ROLES ----------
-    async def set_roles(self, admin, staff, helper, restricted_ids, booster=None):
+    async def set_roles(self, admin, staff, helper, restricted_ids):
         roles_data = {
             "admin": admin,
             "staff": staff,
             "helper": helper,
-            "restricted": restricted_ids,
-            "booster": booster
+            "restricted": restricted_ids
         }
         await self.save_config("roles", roles_data)
 
     async def get_roles(self):
         roles = await self.load_config("roles")
         if not roles:
-            return {"admin": None, "staff": None, "helper": None, "restricted": [], "booster": None}
-        if "booster" not in roles:
-            roles["booster"] = None
+            return {"admin": None, "staff": None, "helper": None, "restricted": []}
         if "restricted" not in roles:
             roles["restricted"] = []
         return roles
@@ -106,7 +103,7 @@ class Database:
     async def get_maintenance(self):
         return await self.load_config("maintenance") or {"enabled": False, "message": "Tickets are temporarily disabled."}
 
-    # ---------- PREFIX (custom commands trigger) ----------
+    # ---------- PREFIX (custom text commands, optional) ----------
     async def set_prefix(self, prefix: str):
         await self.save_config("prefix", {"value": prefix})
 
@@ -114,7 +111,7 @@ class Database:
         data = await self.load_config("prefix")
         return (data or {}).get("value", "!")
 
-    # ---------- TICKET CATEGORY (Discord category to create ticket channels) ----------
+    # ---------- TICKET CATEGORY ----------
     async def set_ticket_category(self, category_id: int):
         await self.save_config("ticket_category", {"id": category_id})
 

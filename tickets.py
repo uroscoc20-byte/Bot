@@ -16,17 +16,9 @@ DEFAULT_POINT_VALUES = {
     "Grim Express": 10,
     "Daily Temple Express": 6,
 }
-DEFAULT_HELPER_SLOTS = {
-    "7-Man Ultra Daily Express": 6,
-    "Grim Express": 6,
-}
+DEFAULT_HELPER_SLOTS = {"7-Man Ultra Daily Express": 6, "Grim Express": 6}
 DEFAULT_SLOTS = 3
-DEFAULT_QUESTIONS = [
-    "In-game name?*",
-    "Server name?*",
-    "Room number?*",
-    "Anything else?",
-]
+DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room number?*", "Anything else?"]
 
 def get_fallback_category(category_name: str):
     return {
@@ -45,7 +37,7 @@ def parse_question_required(label: str):
     return cleaned, required
 
 # ---------- STORAGE ----------
-active_tickets = {}  # channel_id -> ticket info
+active_tickets = {}
 
 # ---------- UTILITY ----------
 async def generate_ticket_transcript(ticket_info, rewarded=False):
@@ -56,10 +48,8 @@ async def generate_ticket_transcript(ticket_info, rewarded=False):
     transcript_text += f"Opened at: {channel.created_at}\n"
     transcript_text += f"Closed at: {datetime.utcnow()}\n"
     transcript_text += f"Rewarded: {'Yes' if rewarded else 'No'}\n\n"
-
     async for msg in channel.history(limit=100, oldest_first=True):
         transcript_text += f"[{msg.created_at}] {msg.author}: {msg.content}\n"
-
     transcript_channel_id = await db.get_transcript_channel()
     if transcript_channel_id:
         guild = channel.guild
@@ -84,14 +74,11 @@ class TicketModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
-
-        # Acknowledge immediately to avoid "interaction failed"
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
         except Exception:
             pass
 
-        # Precheck bot perms
         if not guild.me.guild_permissions.manage_channels:
             await interaction.followup.send(
                 "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
@@ -99,7 +86,6 @@ class TicketModal(Modal):
             )
             return
 
-        # Ticket number
         try:
             number = await db.increment_ticket_number(self.category)
         except Exception:
@@ -111,7 +97,6 @@ class TicketModal(Modal):
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
 
-        # Parent category (optional)
         parent_category = None
         try:
             cat_id = await db.get_ticket_category()
@@ -120,37 +105,25 @@ class TicketModal(Modal):
         except Exception:
             parent_category = None
 
-        # Create channel: try with category; fallback without
         ticket_channel = None
         try:
             ticket_channel = await guild.create_text_channel(
-                channel_name,
-                overwrites=overwrites,
-                category=parent_category,
+                channel_name, overwrites=overwrites, category=parent_category,
                 reason=f"Ticket created by {interaction.user} for {self.category}",
             )
         except discord.Forbidden:
-            # Fallback: create at guild root
             try:
                 ticket_channel = await guild.create_text_channel(
-                    channel_name,
-                    overwrites=overwrites,
+                    channel_name, overwrites=overwrites,
                     reason=f"Ticket created by {interaction.user} (no category access)",
                 )
             except Exception as e:
-                await interaction.followup.send(
-                    f"Ticket creation failed: {e}. Please contact an admin.",
-                    ephemeral=True,
-                )
+                await interaction.followup.send(f"Ticket creation failed: {e}. Please contact an admin.", ephemeral=True)
                 return
         except Exception as e:
-            await interaction.followup.send(
-                f"Ticket creation failed: {e}. Please contact an admin.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(f"Ticket creation failed: {e}. Please contact an admin.", ephemeral=True)
             return
 
-        # Build & post embed
         embed = discord.Embed(
             title=f"{self.category} Ticket #{number}",
             description=f"Requestor: {interaction.user.mention}",
@@ -191,7 +164,6 @@ class TicketSelect(Select):
         super().__init__(placeholder="Choose ticket type...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        # Restricted role check
         member_role_ids = [role.id for role in interaction.user.roles]
         roles_cfg = await db.get_roles()
         restricted_raw = roles_cfg.get("restricted", []) if roles_cfg else []
@@ -205,7 +177,6 @@ class TicketSelect(Select):
             await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
             return
 
-        # Bot perms check
         if not interaction.guild.me.guild_permissions.manage_channels:
             await interaction.response.send_message(
                 "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
@@ -213,14 +184,11 @@ class TicketSelect(Select):
             )
             return
 
-        # Show modal
         category_name = self.values[0]
         cat_data = await db.get_category(category_name)
         if not cat_data:
             cat_data = get_fallback_category(category_name)
-        await interaction.response.send_modal(
-            TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"])
-        )
+        await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
 
 class TicketPanelView(View):
     def __init__(self, categories):
@@ -260,22 +228,17 @@ class TicketModule(commands.Cog):
 
         categories = await db.get_categories()
         if not categories:
-            categories = [
-                {
-                    "name": name,
-                    "questions": DEFAULT_QUESTIONS,
-                    "points": pts,
-                    "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
-                }
-                for name, pts in DEFAULT_POINT_VALUES.items()
-            ]
+            categories = [{
+                "name": name,
+                "questions": DEFAULT_QUESTIONS,
+                "points": pts,
+                "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
+            } for name, pts in DEFAULT_POINT_VALUES.items()]
         panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
         embed = discord.Embed(
             title="🎮 In-game Assistance",
-            description=panel_cfg.get(
-                "text", "Select a service below to create a help ticket. Our helpers will assist you!"
-            ),
+            description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
             color=panel_cfg.get("color", 0x5865F2),
         )
         services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]

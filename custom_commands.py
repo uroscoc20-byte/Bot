@@ -7,18 +7,15 @@ from tickets import DEFAULT_POINT_VALUES
 class CustomCommandsModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.custom_commands = {}  # cache in memory
+        self.custom_commands = {}
 
     async def load_commands(self):
-        """Load custom commands from DB into memory"""
         rows = await db.get_custom_commands()
-        # Normalize to dict for quick lookup
         self.custom_commands = {r["name"]: {"text": r["text"], "image": r["image"]} for r in rows}
 
     @commands.Cog.listener()
     async def on_ready(self):
         await self.load_commands()
-        # Register slash commands dynamically for each custom command
         for name in self.custom_commands:
             if not self.bot.tree.get_command(name):
                 self.bot.tree.add_command(
@@ -44,13 +41,13 @@ class CustomCommandsModule(commands.Cog):
             embed.set_image(url=data["image"])
         await interaction.response.send_message(embed=embed)
 
-    # Add /remove/list commands for admins
     @commands.slash_command(name="custom_add", description="Add a custom command (Admin only)")
     async def custom_add(
-        self, ctx: discord.ApplicationContext,
+        self,
+        ctx: discord.ApplicationContext,
         name: discord.Option(str, "Command name"),
         text: discord.Option(str, "Text to display"),
-        image: discord.Option(str, "Optional image URL", required=False)
+        image: discord.Option(str, "Optional image URL", required=False),
     ):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You are not allowed to run this.", ephemeral=True)
@@ -58,14 +55,9 @@ class CustomCommandsModule(commands.Cog):
         await db.add_custom_command(name, text, image)
         self.custom_commands[name] = {"text": text, "image": image}
         await ctx.respond(f"✅ Custom command `{name}` added.")
-        # Register dynamically
         if not self.bot.tree.get_command(name):
             self.bot.tree.add_command(
-                discord.app_commands.Command(
-                    name=name,
-                    description=f"Custom command: {name}",
-                    callback=self.dynamic_command
-                )
+                discord.app_commands.Command(name=name, description=f"Custom command: {name}", callback=self.dynamic_command)
             )
         try:
             await self.bot.tree.sync()
@@ -83,7 +75,6 @@ class CustomCommandsModule(commands.Cog):
         self.custom_commands.pop(name)
         await db.remove_custom_command(name)
         await ctx.respond(f"✅ Custom command `{name}` removed.")
-        # Remove from bot tree
         if self.bot.tree.get_command(name):
             self.bot.tree.remove_command(name)
         try:
@@ -103,7 +94,6 @@ class CustomCommandsModule(commands.Cog):
             embed.add_field(name=cmd["name"], value=f"Text: {cmd['text']}\nImage: {img_text}", inline=False)
         await ctx.respond(embed=embed)
 
-    # ---------- /info ----------
     @commands.slash_command(name="info", description="Show bot commands and info")
     async def info(self, ctx: discord.ApplicationContext):
         embed = discord.Embed(
@@ -111,8 +101,6 @@ class CustomCommandsModule(commands.Cog):
             description="Welcome! Here are all the commands you can use.",
             color=0x5865F2,
         )
-
-        # Tickets
         embed.add_field(
             name="🎫 Ticket Commands",
             value=(
@@ -121,8 +109,6 @@ class CustomCommandsModule(commands.Cog):
             ),
             inline=False,
         )
-
-        # Points
         embed.add_field(
             name="📊 Points & Leaderboard",
             value=(
@@ -136,41 +122,31 @@ class CustomCommandsModule(commands.Cog):
             ),
             inline=False,
         )
-
-        # Services
         services = "\n".join([f"- {name} — {pts} pts" for name, pts in DEFAULT_POINT_VALUES.items()])
         embed.add_field(name="🎮 Service Types & Points", value=services, inline=False)
-
-        # Utility
         embed.add_field(
             name="🧰 Utility",
             value="`/talk` — Send a message/embed/file to a channel or thread (admin)",
             inline=False,
         )
-
-        # Setup
         embed.add_field(
             name="⚙️ Setup",
             value=(
-                "`/setup_roles` — Configure admin/staff/helper/restricted roles (admin)\n"
-                "`/setup_roles_show` — Show current role configuration\n"
-                "`/setup_transcript` — Set transcript channel (admin)\n"
-                "`/setup_panel` — Customize panel text/color (admin)\n"
-                "`/setup_maintenance` — Toggle ticket availability (admin)\n"
-                "`/setup_category_add|remove|list` — Manage ticket services (admin)"
+                "`/setup_roles` — Configure roles (admin)\n"
+                "`/setup_roles_show` — Show current roles\n"
+                "`/setup_transcript` — Set transcript channel\n"
+                "`/setup_panel` — Customize panel text/color\n"
+                "`/setup_maintenance` — Toggle ticket availability\n"
+                "`/setup_category_add|remove|list` — Manage categories"
             ),
             inline=False,
         )
-
-        # Guidelines
         embed.add_field(
             name="📜 Guidelines",
             value="See your guidelines channel for ticket rules.",
             inline=False,
         )
-
         await ctx.respond(embed=embed)
 
-# ---------- SETUP ----------
 def setup(bot):
     bot.add_cog(CustomCommandsModule(bot))

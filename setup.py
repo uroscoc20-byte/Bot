@@ -2,12 +2,10 @@ import discord
 from discord.ext import commands
 from database import db
 
-# ---------- COG ----------
 class SetupModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # ---------- Roles Setup ----------
     @commands.slash_command(name="setup_roles", description="Configure bot roles (Admin only)")
     async def setup_roles(
         self, ctx: discord.ApplicationContext,
@@ -19,12 +17,10 @@ class SetupModule(commands.Cog):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You are not allowed to run this.", ephemeral=True)
             return
-
         restricted_ids = [int(r.strip()) for r in restricted.split(",")] if restricted else []
         await db.set_roles(admin.id, staff.id, helper.id, restricted_ids)
         await ctx.respond("✅ Roles configuration updated!")
 
-    # ---------- Transcript Channel ----------
     @commands.slash_command(name="setup_transcript", description="Set transcript channel (Admin only)")
     async def setup_transcript(
         self, ctx: discord.ApplicationContext,
@@ -36,7 +32,6 @@ class SetupModule(commands.Cog):
         await db.set_transcript_channel(channel.id)
         await ctx.respond(f"✅ Transcript channel set to {channel.mention}")
 
-    # ---------- Ticket Category (where ticket channels are created) ----------
     @commands.slash_command(name="setup_ticket_category", description="Set Discord category for tickets (Admin only)")
     async def setup_ticket_category(
         self,
@@ -49,7 +44,6 @@ class SetupModule(commands.Cog):
         await db.set_ticket_category(category.id)
         await ctx.respond(f"✅ Ticket category set to {category.mention}")
 
-    # ---------- Show current roles ----------
     @commands.slash_command(name="setup_roles_show", description="Show current configured roles")
     async def setup_roles_show(self, ctx: discord.ApplicationContext):
         roles = await db.get_roles()
@@ -76,11 +70,8 @@ class SetupModule(commands.Cog):
         embed.add_field(name="Staff Role", value=fmt(roles.get("staff")), inline=True)
         embed.add_field(name="Helper Role", value=fmt(roles.get("helper")), inline=True)
         embed.add_field(name="Restricted Roles", value=restricted_text, inline=False)
-        if roles.get("booster") is not None:
-            embed.add_field(name="Booster Role", value=fmt(roles.get("booster")), inline=True)
         await ctx.respond(embed=embed, ephemeral=True)
 
-    # ---------- Panel customization ----------
     @commands.slash_command(name="setup_panel", description="Customize ticket panel text and color (Admin only)")
     async def setup_panel(
         self,
@@ -101,7 +92,6 @@ class SetupModule(commands.Cog):
         await db.set_panel_config(text=text, color=color_value)
         await ctx.respond("✅ Panel configuration updated.")
 
-    # ---------- Maintenance toggle ----------
     @commands.slash_command(name="setup_maintenance", description="Enable/disable ticket opening (Admin only)")
     async def setup_maintenance(
         self,
@@ -115,7 +105,6 @@ class SetupModule(commands.Cog):
         await db.set_maintenance(enabled, message)
         await ctx.respond("✅ Maintenance settings updated.")
 
-    # ---------- Prefix for custom text commands ----------
     @commands.slash_command(name="setup_prefix", description="Set the text prefix for custom commands (Admin only)")
     async def setup_prefix(
         self,
@@ -131,7 +120,6 @@ class SetupModule(commands.Cog):
         await db.set_prefix(prefix)
         await ctx.respond(f"✅ Prefix set to `{prefix}`")
 
-    # ---------- Category Setup ----------
     @commands.slash_command(name="setup_category_add", description="Add a new ticket category (Admin only)")
     async def setup_category_add(
         self, ctx: discord.ApplicationContext,
@@ -177,6 +165,5 @@ class SetupModule(commands.Cog):
             )
         await ctx.respond(embed=embed)
 
-# ---------- SETUP ----------
 def setup(bot):
     bot.add_cog(SetupModule(bot))
