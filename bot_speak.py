@@ -10,7 +10,7 @@ class TalkModule(commands.Cog):
     async def talk(
         self,
         ctx: discord.ApplicationContext,
-        channel_input: discord.Option(str, "Channel ID or name"),
+        channel_input: discord.Option(str, "Channel or thread ID or name"),
         content: discord.Option(str, "Text to send"),
         image_url: discord.Option(str, "Optional image URL", required=False)
     ):
@@ -22,13 +22,14 @@ class TalkModule(commands.Cog):
         guild = ctx.guild
         target_channel = None
 
-        # Try by ID
+        # Try by ID (channel or thread)
         if channel_input.isdigit():
-            target_channel = guild.get_channel(int(channel_input))
-        # Try by name
+            cid = int(channel_input)
+            target_channel = guild.get_channel(cid) or guild.get_thread(cid)
+        # Try by name (text channels only)
         if not target_channel:
             for ch in guild.channels:
-                if ch.name == channel_input:
+                if hasattr(ch, "name") and ch.name == channel_input:
                     target_channel = ch
                     break
 
