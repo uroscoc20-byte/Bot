@@ -123,5 +123,5 @@ class SetupModule(commands.Cog):
         await ctx.respond(embed=embed)
 
 # ---------- SETUP ----------
-async def setup(bot):
-    await bot.add_cog(SetupModule(bot))
+def setup(bot):
+    bot.add_cog(SetupModule(bot))

@@ -54,5 +54,5 @@ class PointsModule(commands.Cog):
         await ctx.respond("Leaderboard has been reset!")
 
 # ---------- SETUP ----------
-async def setup(bot):
-    await bot.add_cog(PointsModule(bot))
+def setup(bot):
+    bot.add_cog(PointsModule(bot))
