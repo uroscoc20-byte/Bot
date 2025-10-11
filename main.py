@@ -39,7 +39,8 @@ initial_extensions = [
     "tickets",
     "points",
     "custom_commands",
-    "bot_speak"  # optional
+    "bot_speak",  # optional
+    "booster_roles"  # new module for booster role flow
 ]
 
 # ---------- ASYNC MAIN ----------
