@@ -71,6 +71,22 @@ class SetupModule(commands.Cog):
         await db.set_maintenance(enabled, message)
         await ctx.respond("✅ Maintenance settings updated.")
 
+    # ---------- Prefix for custom text commands ----------
+    @commands.slash_command(name="setup_prefix", description="Set the text prefix for custom commands (Admin only)")
+    async def setup_prefix(
+        self,
+        ctx: discord.ApplicationContext,
+        prefix: discord.Option(str, "Prefix like ! or ?")
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        if not prefix or len(prefix) > 3:
+            await ctx.respond("Please provide a short prefix (1-3 chars).", ephemeral=True)
+            return
+        await db.set_prefix(prefix)
+        await ctx.respond(f"✅ Prefix set to `{prefix}`")
+
     # ---------- Category Setup ----------
     @commands.slash_command(name="setup_category_add", description="Add a new ticket category (Admin only)")
     async def setup_category_add(

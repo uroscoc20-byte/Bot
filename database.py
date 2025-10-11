@@ -101,6 +101,14 @@ class Database:
     async def get_maintenance(self):
         return await self.load_config("maintenance") or {"enabled": False, "message": "Tickets are temporarily disabled."}
 
+    # ---------- PREFIX (custom commands trigger) ----------
+    async def set_prefix(self, prefix: str):
+        await self.save_config("prefix", {"value": prefix})
+
+    async def get_prefix(self):
+        data = await self.load_config("prefix")
+        return (data or {}).get("value", "!")
+
     # ---------- CATEGORIES ----------
     async def add_category(self, name, questions, points, slots):
         questions_json = json.dumps(questions)
