@@ -49,6 +49,37 @@ class SetupModule(commands.Cog):
         await db.set_ticket_category(category.id)
         await ctx.respond(f"✅ Ticket category set to {category.mention}")
 
+    # ---------- Show current roles ----------
+    @commands.slash_command(name="setup_roles_show", description="Show current configured roles")
+    async def setup_roles_show(self, ctx: discord.ApplicationContext):
+        roles = await db.get_roles()
+        guild = ctx.guild
+
+        def fmt(role_id):
+            if not role_id:
+                return "Not set"
+            role = guild.get_role(role_id)
+            return role.mention if role else f"`{role_id}`"
+
+        restricted_list = []
+        for rid in roles.get("restricted", []) or []:
+            try:
+                rid_int = int(rid)
+            except Exception:
+                rid_int = None
+            role = guild.get_role(rid_int) if rid_int else None
+            restricted_list.append(role.mention if role else f"`{rid}`")
+        restricted_text = ", ".join(restricted_list) if restricted_list else "None"
+
+        embed = discord.Embed(title="🔧 Current Role Configuration", color=0x5865F2)
+        embed.add_field(name="Admin Role", value=fmt(roles.get("admin")), inline=True)
+        embed.add_field(name="Staff Role", value=fmt(roles.get("staff")), inline=True)
+        embed.add_field(name="Helper Role", value=fmt(roles.get("helper")), inline=True)
+        embed.add_field(name="Restricted Roles", value=restricted_text, inline=False)
+        if roles.get("booster") is not None:
+            embed.add_field(name="Booster Role", value=fmt(roles.get("booster")), inline=True)
+        await ctx.respond(embed=embed, ephemeral=True)
+
     # ---------- Panel customization ----------
     @commands.slash_command(name="setup_panel", description="Customize ticket panel text and color (Admin only)")
     async def setup_panel(
