@@ -193,6 +193,10 @@ class Database:
             rows = await cursor.fetchall()
             return [(uid, pts) for uid, pts in rows]
 
+    async def delete_user_points(self, user_id):
+        await self.db.execute("DELETE FROM user_points WHERE user_id = ?", (user_id,))
+        await self.db.commit()
+
     # ---------- TICKET COUNTER ----------
     async def get_ticket_number(self, category):
         async with self.db.execute("SELECT last_number FROM tickets_counter WHERE category = ?", (category,)) as cursor:

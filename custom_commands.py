@@ -2,6 +2,7 @@
 import discord
 from discord.ext import commands
 from database import db
+from tickets import DEFAULT_POINT_VALUES
 
 class CustomCommandsModule(commands.Cog):
     def __init__(self, bot):
@@ -124,6 +125,41 @@ class CustomCommandsModule(commands.Cog):
             img_text = cmd.get("image") or "No image"
             embed.add_field(name=cmd["name"], value=f"Text: {cmd['text']}\nImage: {img_text}", inline=False)
         await ctx.respond(embed=embed)
+
+    @commands.slash_command(name="help", description="Show bot commands and info")
+    async def help(self, ctx: discord.ApplicationContext):
+        prefix = await db.get_prefix()
+        embed = discord.Embed(title="✨ Bot Commands & Help", description="Welcome! Here are all the commands you can use.", color=0x5865F2)
+        embed.add_field(
+            name="🎫 Ticket Commands",
+            value=(
+                f"`/panel` — Post ticket panel (admin/staff)\n"
+                f"`{prefix}create` — Create ticket panel (admin)\n"
+                f"`{prefix}delete <message_id>` — Delete ticket panel (admin)\n"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="📊 Points & Leaderboard",
+            value=(
+                f"`/leaderboard [page]` — View top helpers\n"
+                f"`/points [user]` — See someone's points\n"
+                f"`/points_add @user amount` — Add points (admin)\n"
+                f"`/points_remove @user amount` — Remove points (admin)\n"
+                f"`/points_set @user amount` — Set points (admin)\n"
+                f"`/points_remove_user @user` — Remove user from leaderboard (admin)\n"
+                f"`/points_reset` — Reset all leaderboard (admin)\n"
+            ),
+            inline=False,
+        )
+        services = "\n".join([f"- {name} — {pts} pts" for name, pts in DEFAULT_POINT_VALUES.items()])
+        embed.add_field(name="🎮 Service Types & Points", value=services, inline=False)
+        embed.add_field(
+            name="📜 Guidelines",
+            value="Use your server's guidelines channel for rules and tips.",
+            inline=False,
+        )
+        await ctx.respond(embed=embed, ephemeral=True)
 
 # ---------- SETUP ----------
 def setup(bot):
