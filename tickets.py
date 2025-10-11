@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from discord.ui import View, Button, Select, Modal, TextInput
+from discord.ui import View, Button, Select, Modal, InputText
 from points import PointsModule
 from database import db  # <-- Use DB
 from datetime import datetime
@@ -40,7 +40,7 @@ class TicketModal(Modal):
         self.slots = slots
         self.inputs = []
         for q in questions:
-            ti = TextInput(label=q, style=discord.TextStyle.paragraph)
+            ti = InputText(label=q, style=discord.InputTextStyle.long)
             self.add_item(ti)
             self.inputs.append(ti)
 
@@ -203,5 +203,5 @@ class TicketModule(commands.Cog):
                 )
 
 # ---------- SETUP ----------
-async def setup(bot):
-    await bot.add_cog(TicketModule(bot))
+def setup(bot):
+    bot.add_cog(TicketModule(bot))

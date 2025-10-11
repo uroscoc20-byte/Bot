@@ -44,25 +44,5 @@ class TalkModule(commands.Cog):
         await ctx.respond(f"Message sent to {target_channel.mention}!", ephemeral=True)
 
 # ---------- SETUP ----------
-async def setup(bot):
-    await bot.add_cog(TalkModule(bot))
-+            for ch in guild.channels:
-+                if ch.name == channel_input:
-+                    target_channel = ch
-+                    break
-+
-+        if not target_channel:
-+            await ctx.respond("Channel not found.", ephemeral=True)
-+            return
-+
-+        embed = discord.Embed(description=content, color=0x00FFAA)
-+        if image_url:
-+            embed.set_image(url=image_url)
-+
-+        await target_channel.send(embed=embed)
-+        await ctx.respond(f"Message sent to {target_channel.mention}!", ephemeral=True)
-+
-+# ---------- SETUP ----------
-+async def setup(bot):
-+    await bot.add_cog(TalkModule(bot))
-+
+def setup(bot):
+    bot.add_cog(TalkModule(bot))
