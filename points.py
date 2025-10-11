@@ -53,6 +53,53 @@ class PointsModule(commands.Cog):
         await db.reset_points()
         await ctx.respond("Leaderboard has been reset!")
 
+    # ---------- /points_add (admin only) ----------
+    @commands.slash_command(name="points_add", description="Add points to a user (Admin only)")
+    async def points_add(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User, "User"), amount: discord.Option(int, "Amount")):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission.", ephemeral=True)
+            return
+        if amount <= 0:
+            await ctx.respond("Amount must be positive.", ephemeral=True)
+            return
+        current = await db.get_points(user.id)
+        await db.set_points(user.id, current + amount)
+        await ctx.respond(f"Added {amount} points to {user.mention}.")
+
+    # ---------- /points_remove (admin only) ----------
+    @commands.slash_command(name="points_remove", description="Remove points from a user (Admin only)")
+    async def points_remove(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User, "User"), amount: discord.Option(int, "Amount")):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission.", ephemeral=True)
+            return
+        if amount <= 0:
+            await ctx.respond("Amount must be positive.", ephemeral=True)
+            return
+        current = await db.get_points(user.id)
+        await db.set_points(user.id, max(0, current - amount))
+        await ctx.respond(f"Removed {amount} points from {user.mention}.")
+
+    # ---------- /points_set (admin only) ----------
+    @commands.slash_command(name="points_set", description="Set user's points to exact value (Admin only)")
+    async def points_set(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User, "User"), amount: discord.Option(int, "Amount")):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission.", ephemeral=True)
+            return
+        if amount < 0:
+            await ctx.respond("Amount cannot be negative.", ephemeral=True)
+            return
+        await db.set_points(user.id, amount)
+        await ctx.respond(f"Set {user.mention}'s points to {amount}.")
+
+    # ---------- /points_remove_user (admin only) ----------
+    @commands.slash_command(name="points_remove_user", description="Remove a user from leaderboard (Admin only)")
+    async def points_remove_user(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User, "User")):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission.", ephemeral=True)
+            return
+        await db.delete_user_points(user.id)
+        await ctx.respond(f"Removed {user.mention} from the leaderboard.")
+
 # ---------- SETUP ----------
 def setup(bot):
     bot.add_cog(PointsModule(bot))

@@ -44,28 +44,7 @@ class CustomCommandsModule(commands.Cog):
             embed.set_image(url=data["image"])
         await interaction.response.send_message(embed=embed)
 
-    # Text prefix handler (e.g., !proof)
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        if message.author.bot or not message.guild:
-            return
-        prefix = await db.get_prefix()
-        content = message.content.strip()
-        if not content.startswith(prefix):
-            return
-        name = content[len(prefix):].split()[0].lower()
-        data = self.custom_commands.get(name)
-        if not data:
-            return
-        # Public by default
-        text = data.get("text") or ""
-        image = data.get("image")
-        if image:
-            embed = discord.Embed(description=text or name, color=0xFFD700)
-            embed.set_image(url=image)
-            await message.channel.send(embed=embed)
-        else:
-            await message.channel.send(text)
+    # (Removed text-prefix handling to enforce slash-only custom commands)
 
     # Add /remove/list commands for admins
     @commands.slash_command(name="custom_add", description="Add a custom command (Admin only)")
@@ -81,6 +60,7 @@ class CustomCommandsModule(commands.Cog):
         await db.add_custom_command(name, text, image)
         self.custom_commands[name] = {"text": text, "image": image}
         await ctx.respond(f"✅ Custom command `{name}` added.")
+        # Register dynamically
         if not self.bot.tree.get_command(name):
             self.bot.tree.add_command(
                 discord.app_commands.Command(
@@ -105,6 +85,7 @@ class CustomCommandsModule(commands.Cog):
         self.custom_commands.pop(name)
         await db.remove_custom_command(name)
         await ctx.respond(f"✅ Custom command `{name}` removed.")
+        # Remove from bot tree
         if self.bot.tree.get_command(name):
             self.bot.tree.remove_command(name)
         try:
@@ -126,27 +107,24 @@ class CustomCommandsModule(commands.Cog):
 
     @commands.slash_command(name="info", description="Show bot commands and info")
     async def info(self, ctx: discord.ApplicationContext):
-        prefix = await db.get_prefix()
         embed = discord.Embed(title="✨ Bot Commands & Help", description="Welcome! Here are all the commands you can use.", color=0x5865F2)
         embed.add_field(
             name="🎫 Ticket Commands",
             value=(
-                f"`/panel` — Post ticket panel (admin/staff)\n"
-                f"`{prefix}create` — Create ticket panel (admin)\n"
-                f"`{prefix}delete <message_id>` — Delete ticket panel (admin)\n"
+                "`/panel` — Post ticket panel (admin/staff)\n"
             ),
             inline=False,
         )
         embed.add_field(
             name="📊 Points & Leaderboard",
             value=(
-                f"`/leaderboard [page]` — View top helpers\n"
-                f"`/points [user]` — See someone's points\n"
-                f"`/points_add @user amount` — Add points (admin)\n"
-                f"`/points_remove @user amount` — Remove points (admin)\n"
-                f"`/points_set @user amount` — Set points (admin)\n"
-                f"`/points_remove_user @user` — Remove user from leaderboard (admin)\n"
-                f"`/points_reset` — Reset all leaderboard (admin)\n"
+                "`/leaderboard [page]` — View top helpers\n"
+                "`/points [user]` — See someone's points\n"
+                "`/points_add @user amount` — Add points (admin)\n"
+                "`/points_remove @user amount` — Remove points (admin)\n"
+                "`/points_set @user amount` — Set points (admin)\n"
+                "`/points_remove_user @user` — Remove user from leaderboard (admin)\n"
+                "`/points_reset` — Reset all leaderboard (admin)\n"
             ),
             inline=False,
         )
