@@ -60,19 +60,24 @@ class Database:
         await self.db.commit()
 
     # ---------- ROLES ----------
-    async def set_roles(self, admin, staff, helper, restricted_ids):
+    async def set_roles(self, admin, staff, helper, restricted_ids, booster=None):
         roles_data = {
             "admin": admin,
             "staff": staff,
             "helper": helper,
-            "restricted": restricted_ids
+            "restricted": restricted_ids,
+            "booster": booster
         }
         await self.save_config("roles", roles_data)
 
     async def get_roles(self):
         roles = await self.load_config("roles")
         if not roles:
-            return {"admin": None, "staff": None, "helper": None, "restricted": []}
+            return {"admin": None, "staff": None, "helper": None, "restricted": [], "booster": None}
+        if "booster" not in roles:
+            roles["booster"] = None
+        if "restricted" not in roles:
+            roles["restricted"] = []
         return roles
 
     # ---------- TRANSCRIPT ----------
