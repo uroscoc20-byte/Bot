@@ -44,5 +44,5 @@ class TalkModule(commands.Cog):
         await ctx.respond(f"Message sent to {target_channel.mention}!", ephemeral=True)
 
 # ---------- SETUP ----------
-def setup(bot):
-    bot.add_cog(TalkModule(bot))
+async def setup(bot):
+    await bot.add_cog(TalkModule(bot))

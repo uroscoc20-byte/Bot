@@ -17,13 +17,22 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="/", intents=intents)
 
+# ---------- EVENTS ----------
+@bot.event
+async def on_ready():
+    try:
+        await bot.tree.sync()
+        print("✅ Slash commands synced.")
+    except Exception as e:
+        print(f"❌ Slash command sync failed: {e}")
+
 # ---------- EXTENSIONS ----------
 initial_extensions = [
     "setup",
     "tickets",
     "points",
     "custom_commands",
-    "talk"  # optional
+    "bot_speak"  # optional
 ]
 
 # ---------- ASYNC MAIN ----------
