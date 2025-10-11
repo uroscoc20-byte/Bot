@@ -107,27 +107,24 @@ class CustomCommandsModule(commands.Cog):
 
     @commands.slash_command(name="info", description="Show bot commands and info")
     async def info(self, ctx: discord.ApplicationContext):
-        prefix = await db.get_prefix()
         embed = discord.Embed(title="✨ Bot Commands & Help", description="Welcome! Here are all the commands you can use.", color=0x5865F2)
         embed.add_field(
             name="🎫 Ticket Commands",
             value=(
-                f"`/panel` — Post ticket panel (admin/staff)\n"
-                f"`{prefix}create` — Create ticket panel (admin)\n"
-                f"`{prefix}delete <message_id>` — Delete ticket panel (admin)\n"
+                "`/panel` — Post ticket panel (admin/staff)\n"
             ),
             inline=False,
         )
         embed.add_field(
             name="📊 Points & Leaderboard",
             value=(
-                f"`/leaderboard [page]` — View top helpers\n"
-                f"`/points [user]` — See someone's points\n"
-                f"`/points_add @user amount` — Add points (admin)\n"
-                f"`/points_remove @user amount` — Remove points (admin)\n"
-                f"`/points_set @user amount` — Set points (admin)\n"
-                f"`/points_remove_user @user` — Remove user from leaderboard (admin)\n"
-                f"`/points_reset` — Reset all leaderboard (admin)\n"
+                "`/leaderboard [page]` — View top helpers\n"
+                "`/points [user]` — See someone's points\n"
+                "`/points_add @user amount` — Add points (admin)\n"
+                "`/points_remove @user amount` — Remove points (admin)\n"
+                "`/points_set @user amount` — Set points (admin)\n"
+                "`/points_remove_user @user` — Remove user from leaderboard (admin)\n"
+                "`/points_reset` — Reset all leaderboard (admin)\n"
             ),
             inline=False,
         )
@@ -135,7 +132,7 @@ class CustomCommandsModule(commands.Cog):
         embed.add_field(name="🎮 Service Types & Points", value=services, inline=False)
         embed.add_field(
             name="📜 Guidelines",
-            value="Use your server's guidelines channel for rules and tips.",
+            value="See your guidelines channel for ticket rules.",
             inline=False,
         )
         await ctx.respond(embed=embed)
