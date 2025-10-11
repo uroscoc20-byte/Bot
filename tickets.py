@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Select, Modal, TextInput
-from points import reward_helpers
+from points import PointsModule
 from database import db  # <-- Use DB
 from datetime import datetime
 from io import StringIO
@@ -20,8 +20,7 @@ async def generate_ticket_transcript(ticket_info, rewarded=False):
     transcript_text += f"Closed at: {datetime.utcnow()}\n"
     transcript_text += f"Rewarded: {'Yes' if rewarded else 'No'}\n\n"
 
-    messages = await channel.history(limit=100, oldest_first=True).flatten()
-    for msg in messages:
+    async for msg in channel.history(limit=100, oldest_first=True):
         transcript_text += f"[{msg.created_at}] {msg.author}: {msg.content}\n"
 
     transcript_channel_id = await db.get_transcript_channel()
@@ -47,8 +46,8 @@ class TicketModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
-        number = tickets_counter.get(self.category, 0) + 1
-        tickets_counter[self.category] = number
+        # Persisted counter via DB to avoid resets on restarts
+        number = await db.increment_ticket_number(self.category)
         channel_name = f"{self.category.lower().replace(' ', '-')}-{number}"
 
         overwrites = {
@@ -152,9 +151,10 @@ class TicketModule(commands.Cog):
                     ticket_info["helpers"][i] = interaction.user.id
                     break
             embed = ticket_info["embed_msg"].embeds[0]
+            base_index = len(embed.fields) - len(ticket_info["helpers"])  # helper fields are last
             for i, helper_id in enumerate(ticket_info["helpers"]):
                 value = f"<@{helper_id}>" if helper_id else "Empty"
-                embed.set_field_at(2+i, name=f"Helper Slot {i+1}", value=value, inline=True)
+                embed.set_field_at(base_index + i, name=f"Helper Slot {i+1}", value=value, inline=True)
             await ticket_info["embed_msg"].edit(embed=embed)
             await interaction.response.send_message("You joined the ticket!", ephemeral=True)
 
@@ -170,9 +170,10 @@ class TicketModule(commands.Cog):
                     ticket_info["helpers"][i] = None
                     break
             embed = ticket_info["embed_msg"].embeds[0]
+            base_index = len(embed.fields) - len(ticket_info["helpers"])  # helper fields are last
             for i, helper_id in enumerate(ticket_info["helpers"]):
                 value = f"<@{helper_id}>" if helper_id else "Empty"
-                embed.set_field_at(2+i, name=f"Helper Slot {i+1}", value=value, inline=True)
+                embed.set_field_at(base_index + i, name=f"Helper Slot {i+1}", value=value, inline=True)
             await ticket_info["embed_msg"].edit(embed=embed)
             await interaction.response.send_message("Helper removed from embed.", ephemeral=True)
 
@@ -191,8 +192,8 @@ class TicketModule(commands.Cog):
                 helpers = [h for h in ticket_info["helpers"] if h]
                 category = ticket_info["category"]
 
-                # Reward points
-                reward_helpers(helpers, category)
+                # Reward points using PointsModule static method
+                await PointsModule.reward_ticket_helpers({**ticket_info, "points": (await db.get_category(category))["points"]})
 
                 # Generate transcript
                 await generate_ticket_transcript(ticket_info, rewarded=True)
@@ -202,5 +203,5 @@ class TicketModule(commands.Cog):
                 )
 
 # ---------- SETUP ----------
-def setup(bot):
-    bot.add_cog(TicketModule(bot))
+async def setup(bot):
+    await bot.add_cog(TicketModule(bot))

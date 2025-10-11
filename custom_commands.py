@@ -10,23 +10,21 @@ class CustomCommandsModule(commands.Cog):
 
     async def load_commands(self):
         """Load custom commands from DB into memory"""
-        rows = await db.load_config("custom_commands") or {}
-        self.custom_commands = rows
+        rows = await db.get_custom_commands()
+        # Normalize to dict for quick lookup
+        self.custom_commands = {r["name"]: {"text": r["text"], "image": r["image"]} for r in rows}
 
     @commands.Cog.listener()
     async def on_ready(self):
         await self.load_commands()
         # Register slash commands dynamically for each custom command
         for name in self.custom_commands:
-            try:
-                self.bot.tree.get_command(name)
-            except:
-                # Only add if it doesn't exist
+            if not self.bot.tree.get_command(name):
                 self.bot.tree.add_command(
                     discord.app_commands.Command(
                         name=name,
                         description=f"Custom command: {name}",
-                        callback=self.dynamic_command
+                        callback=self.dynamic_command,
                     )
                 )
         await self.bot.tree.sync()
@@ -53,13 +51,11 @@ class CustomCommandsModule(commands.Cog):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You are not allowed to run this.", ephemeral=True)
             return
+        await db.add_custom_command(name, text, image)
         self.custom_commands[name] = {"text": text, "image": image}
-        await db.save_config("custom_commands", self.custom_commands)
         await ctx.respond(f"✅ Custom command `{name}` added.")
         # Register dynamically
-        try:
-            self.bot.tree.get_command(name)
-        except:
+        if not self.bot.tree.get_command(name):
             self.bot.tree.add_command(
                 discord.app_commands.Command(
                     name=name,
@@ -67,7 +63,7 @@ class CustomCommandsModule(commands.Cog):
                     callback=self.dynamic_command
                 )
             )
-            await self.bot.tree.sync()
+        await self.bot.tree.sync()
 
     @commands.slash_command(name="custom_remove", description="Remove a custom command (Admin only)")
     async def custom_remove(self, ctx: discord.ApplicationContext, name: discord.Option(str, "Command name")):
@@ -78,27 +74,25 @@ class CustomCommandsModule(commands.Cog):
             await ctx.respond(f"⚠ Custom command `{name}` does not exist.", ephemeral=True)
             return
         self.custom_commands.pop(name)
-        await db.save_config("custom_commands", self.custom_commands)
+        await db.remove_custom_command(name)
         await ctx.respond(f"✅ Custom command `{name}` removed.")
         # Remove from bot tree
-        try:
-            cmd = self.bot.tree.get_command(name)
+        if self.bot.tree.get_command(name):
             self.bot.tree.remove_command(name)
-            await self.bot.tree.sync()
-        except:
-            pass
+        await self.bot.tree.sync()
 
     @commands.slash_command(name="custom_list", description="List all custom commands")
     async def custom_list(self, ctx: discord.ApplicationContext):
-        if not self.custom_commands:
+        rows = await db.get_custom_commands()
+        if not rows:
             await ctx.respond("No custom commands configured.")
             return
         embed = discord.Embed(title="Custom Commands", color=0xAA00FF)
-        for name, data in self.custom_commands.items():
-            img_text = data.get("image") or "No image"
-            embed.add_field(name=name, value=f"Text: {data['text']}\nImage: {img_text}", inline=False)
+        for cmd in rows:
+            img_text = cmd.get("image") or "No image"
+            embed.add_field(name=cmd["name"], value=f"Text: {cmd['text']}\nImage: {img_text}", inline=False)
         await ctx.respond(embed=embed)
 
 # ---------- SETUP ----------
-def setup(bot):
-    bot.add_cog(CustomCommandsModule(bot))
+async def setup(bot):
+    await bot.add_cog(CustomCommandsModule(bot))
