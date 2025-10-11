@@ -126,8 +126,8 @@ class CustomCommandsModule(commands.Cog):
             embed.add_field(name=cmd["name"], value=f"Text: {cmd['text']}\nImage: {img_text}", inline=False)
         await ctx.respond(embed=embed)
 
-    @commands.slash_command(name="help", description="Show bot commands and info")
-    async def help(self, ctx: discord.ApplicationContext):
+    @commands.slash_command(name="info", description="Show bot commands and info")
+    async def info(self, ctx: discord.ApplicationContext):
         prefix = await db.get_prefix()
         embed = discord.Embed(title="✨ Bot Commands & Help", description="Welcome! Here are all the commands you can use.", color=0x5865F2)
         embed.add_field(
@@ -159,7 +159,7 @@ class CustomCommandsModule(commands.Cog):
             value="Use your server's guidelines channel for rules and tips.",
             inline=False,
         )
-        await ctx.respond(embed=embed, ephemeral=True)
+        await ctx.respond(embed=embed)
 
 # ---------- SETUP ----------
 def setup(bot):
