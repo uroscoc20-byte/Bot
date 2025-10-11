@@ -44,6 +44,80 @@ class PointsModule(commands.Cog):
         embed = await create_leaderboard_embed(page=page, per_page=10)
         await ctx.respond(embed=embed)
 
+    # ---------- TEXT COMMANDS (aliases for slash) ----------
+    @commands.command(name="leaderboard", aliases=["lb"])
+    async def leaderboard_text(self, ctx: commands.Context, page: int = 1):
+        rows = await db.get_leaderboard()
+        if not rows:
+            await ctx.send("Leaderboard is empty.")
+            return
+        embed = await create_leaderboard_embed(page=page, per_page=10)
+        await ctx.send(embed=embed)
+
+    @commands.command(name="mypoints")
+    async def mypoints_text(self, ctx: commands.Context):
+        pts = await db.get_points(ctx.author.id)
+        embed = discord.Embed(title="📊 Your Points", description=f"**{pts} points**", color=0x5865F2)
+        embed.set_thumbnail(url=ctx.author.display_avatar.url)
+        await ctx.send(embed=embed)
+
+    @commands.command(name="points")
+    async def points_text(self, ctx: commands.Context, user: discord.Member = None):
+        target = user or ctx.author
+        pts = await db.get_points(target.id)
+        embed = discord.Embed(title=f"Points for {target.display_name}", description=f"**{pts} points**", color=0x5865F2)
+        await ctx.send(embed=embed)
+
+    @commands.command(name="add")
+    @commands.has_permissions(administrator=True)
+    async def add_points_text(self, ctx: commands.Context, user: discord.Member, amount: int):
+        if amount <= 0:
+            await ctx.send("Amount must be positive.")
+            return
+        current = await db.get_points(user.id)
+        await db.set_points(user.id, current + amount)
+        await ctx.send(f"✅ Added **{amount}** points to {user.mention}.")
+
+    @commands.command(name="remove")
+    @commands.has_permissions(administrator=True)
+    async def remove_points_text(self, ctx: commands.Context, user: discord.Member, amount: int):
+        if amount <= 0:
+            await ctx.send("Amount must be positive.")
+            return
+        current = await db.get_points(user.id)
+        await db.set_points(user.id, max(0, current - amount))
+        await ctx.send(f"✅ Removed **{amount}** points from {user.mention}.")
+
+    @commands.command(name="setpoints")
+    @commands.has_permissions(administrator=True)
+    async def set_points_text(self, ctx: commands.Context, user: discord.Member, amount: int):
+        if amount < 0:
+            await ctx.send("Amount cannot be negative.")
+            return
+        await db.set_points(user.id, amount)
+        await ctx.send(f"✅ Set {user.mention}'s points to **{amount}**.")
+
+    @commands.command(name="resetpoints")
+    @commands.has_permissions(administrator=True)
+    async def reset_points_text(self, ctx: commands.Context, user: discord.Member = None):
+        if user:
+            await db.set_points(user.id, 0)
+            await ctx.send(f"✅ Reset points for {user.mention}.")
+        else:
+            await ctx.send("Provide a user to reset or use `/points_reset` or `!restartleaderboard` to reset all.")
+
+    @commands.command(name="removeuser")
+    @commands.has_permissions(administrator=True)
+    async def remove_user_text(self, ctx: commands.Context, user: discord.Member):
+        await db.delete_user_points(user.id)
+        await ctx.send(f"✅ Removed {user.mention} from the leaderboard.")
+
+    @commands.command(name="restartleaderboard")
+    @commands.has_permissions(administrator=True)
+    async def restart_leaderboard_text(self, ctx: commands.Context):
+        await db.reset_points()
+        await ctx.send("✅ Leaderboard has been reset.")
+
     # ---------- /points_reset (admin only) ----------
     @commands.slash_command(name="points_reset", description="Reset all points (Admin only)")
     async def points_reset(self, ctx: discord.ApplicationContext):
