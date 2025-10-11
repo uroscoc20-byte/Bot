@@ -71,6 +71,22 @@ class SetupModule(commands.Cog):
         await db.set_maintenance(enabled, message)
         await ctx.respond("✅ Maintenance settings updated.")
 
+    # ---------- Prefix for custom text commands ----------
+    @commands.slash_command(name="setup_prefix", description="Set the text prefix for custom commands (Admin only)")
+    async def setup_prefix(
+        self,
+        ctx: discord.ApplicationContext,
+        prefix: discord.Option(str, "Prefix like ! or ?")
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        if not prefix or len(prefix) > 3:
+            await ctx.respond("Please provide a short prefix (1-3 chars).", ephemeral=True)
+            return
+        await db.set_prefix(prefix)
+        await ctx.respond(f"✅ Prefix set to `{prefix}`")
+
     # ---------- Category Setup ----------
     @commands.slash_command(name="setup_category_add", description="Add a new ticket category (Admin only)")
     async def setup_category_add(
@@ -115,46 +131,6 @@ class SetupModule(commands.Cog):
                 value=questions_text,
                 inline=False
             )
-        await ctx.respond(embed=embed)
-
-    # ---------- Custom Commands ----------
-    @commands.slash_command(name="setup_custom_add", description="Add a custom command (Admin only)")
-    async def setup_custom_add(
-        self, ctx: discord.ApplicationContext,
-        name: discord.Option(str, "Command name"),
-        text: discord.Option(str, "Text to display"),
-        image: discord.Option(str, "Optional image URL", required=False)
-    ):
-        if not ctx.user.guild_permissions.administrator:
-            await ctx.respond("You are not allowed to run this.", ephemeral=True)
-            return
-        await db.add_custom_command(name, text, image)
-        await ctx.respond(f"✅ Custom command `{name}` added.")
-
-    @commands.slash_command(name="setup_custom_remove", description="Remove a custom command (Admin only)")
-    async def setup_custom_remove(
-        self, ctx: discord.ApplicationContext,
-        name: discord.Option(str, "Command name to remove")
-    ):
-        if not ctx.user.guild_permissions.administrator:
-            await ctx.respond("You are not allowed to run this.", ephemeral=True)
-            return
-        removed = await db.remove_custom_command(name)
-        if removed:
-            await ctx.respond(f"✅ Custom command `{name}` removed.")
-        else:
-            await ctx.respond(f"⚠ Custom command `{name}` does not exist.", ephemeral=True)
-
-    @commands.slash_command(name="setup_custom_list", description="List all custom commands")
-    async def setup_custom_list(self, ctx: discord.ApplicationContext):
-        commands_list = await db.get_custom_commands()
-        if not commands_list:
-            await ctx.respond("No custom commands configured.")
-            return
-        embed = discord.Embed(title="Custom Commands", color=0xAA00FF)
-        for cmd in commands_list:
-            img_text = cmd["image"] if cmd["image"] else "No image"
-            embed.add_field(name=cmd["name"], value=f"Text: {cmd['text']}\nImage: {img_text}", inline=False)
         await ctx.respond(embed=embed)
 
 # ---------- SETUP ----------

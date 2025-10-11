@@ -6,6 +6,43 @@ from database import db  # <-- Use DB
 from datetime import datetime
 from io import StringIO
 
+# ---------- DEFAULTS (used when DB has no categories) ----------
+DEFAULT_POINT_VALUES = {
+    "Ultra Speaker Express": 8,
+    "Ultra Gramiel Express": 7,
+    "4-Man Ultra Daily Express": 4,
+    "7-Man Ultra Daily Express": 10,
+    "Ultra Weekly Express": 12,
+    "Grim Express": 10,
+    "Daily Temple Express": 6,
+}
+
+DEFAULT_HELPER_SLOTS = {
+    "7-Man Ultra Daily Express": 6,
+    "Grim Express": 6,
+}
+DEFAULT_SLOTS = 3
+DEFAULT_QUESTIONS = [
+    "What do you need help with?*",
+    "Additional information",
+]
+
+def get_fallback_category(category_name: str):
+    return {
+        "name": category_name,
+        "questions": DEFAULT_QUESTIONS,
+        "points": DEFAULT_POINT_VALUES.get(category_name, 0),
+        "slots": DEFAULT_HELPER_SLOTS.get(category_name, DEFAULT_SLOTS),
+    }
+
+def parse_question_required(label: str):
+    raw = label.strip()
+    required = raw.endswith("*") or raw.startswith("*") or raw.lower().endswith("(required)")
+    cleaned = raw.strip("* ")
+    if cleaned.lower().endswith("(required)"):
+        cleaned = cleaned[: -len("(required)")].strip()
+    return cleaned, required
+
 # ---------- STORAGE ----------
 tickets_counter = {}  # category_name -> last ticket number
 active_tickets = {}   # channel_id -> ticket info
@@ -40,7 +77,8 @@ class TicketModal(Modal):
         self.slots = slots
         self.inputs = []
         for q in questions:
-            ti = InputText(label=q, style=discord.InputTextStyle.long)
+            label, required = parse_question_required(q)
+            ti = InputText(label=label, style=discord.InputTextStyle.long, required=required)
             self.add_item(ti)
             self.inputs.append(ti)
 
@@ -106,6 +144,8 @@ class TicketSelect(Select):
 
         category_name = self.values[0]
         cat_data = await db.get_category(category_name)
+        if not cat_data:
+            cat_data = get_fallback_category(category_name)
         await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
 
 class TicketPanelView(View):
@@ -130,10 +170,26 @@ class TicketModule(commands.Cog):
             await ctx.respond(maintenance.get("message", "Tickets are disabled."), ephemeral=True)
             return
         categories = await db.get_categories()
+        if not categories:
+            categories = [{
+                "name": name,
+                "questions": DEFAULT_QUESTIONS,
+                "points": pts,
+                "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
+            } for name, pts in DEFAULT_POINT_VALUES.items()]
         panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
-        embed = discord.Embed(description=panel_cfg.get("text", "Ticket panel"), color=panel_cfg.get("color", 0x7289DA))
-        embed.title = "Open a Ticket"
+        embed = discord.Embed(
+            title="🎮 In-game Assistance",
+            description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
+            color=panel_cfg.get("color", 0x5865F2),
+        )
+        # List services with points
+        services = []
+        for cat in categories:
+            services.append(f"- **{cat['name']}** — {cat.get('points', 0)} points")
+        embed.add_field(name="📋 Available Services", value="\n".join(services) or "No services configured", inline=False)
+        embed.add_field(name="ℹ️ How it works", value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!", inline=False)
         await ctx.respond(embed=embed, view=view)
 
     # ---------- BUTTON HANDLER ----------
@@ -199,8 +255,10 @@ class TicketModule(commands.Cog):
                 helpers = [h for h in ticket_info["helpers"] if h]
                 category = ticket_info["category"]
 
-                # Reward points using PointsModule static method
-                await PointsModule.reward_ticket_helpers({**ticket_info, "points": (await db.get_category(category))["points"]})
+                # Reward points using PointsModule static method with fallback
+                cat_data = await db.get_category(category)
+                points_value = (cat_data or get_fallback_category(category))["points"]
+                await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
 
                 # Generate transcript
                 await generate_ticket_transcript(ticket_info, rewarded=True)

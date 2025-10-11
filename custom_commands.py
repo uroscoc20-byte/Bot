@@ -27,7 +27,10 @@ class CustomCommandsModule(commands.Cog):
                         callback=self.dynamic_command,
                     )
                 )
-        await self.bot.tree.sync()
+        try:
+            await self.bot.tree.sync()
+        except Exception:
+            pass
 
     async def dynamic_command(self, interaction: discord.Interaction):
         command_name = interaction.data.get("name")
@@ -39,6 +42,29 @@ class CustomCommandsModule(commands.Cog):
         if data.get("image"):
             embed.set_image(url=data["image"])
         await interaction.response.send_message(embed=embed)
+
+    # Text prefix handler (e.g., !proof)
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
+            return
+        prefix = await db.get_prefix()
+        content = message.content.strip()
+        if not content.startswith(prefix):
+            return
+        name = content[len(prefix):].split()[0].lower()
+        data = self.custom_commands.get(name)
+        if not data:
+            return
+        # Respect permissions? These are public by default.
+        text = data.get("text") or ""
+        image = data.get("image")
+        if image:
+            embed = discord.Embed(description=text or name, color=0xFFD700)
+            embed.set_image(url=image)
+            await message.channel.send(embed=embed)
+        else:
+            await message.channel.send(text)
 
     # Add /remove/list commands for admins
     @commands.slash_command(name="custom_add", description="Add a custom command (Admin only)")
@@ -63,7 +89,10 @@ class CustomCommandsModule(commands.Cog):
                     callback=self.dynamic_command
                 )
             )
-        await self.bot.tree.sync()
+        try:
+            await self.bot.tree.sync()
+        except Exception:
+            pass
 
     @commands.slash_command(name="custom_remove", description="Remove a custom command (Admin only)")
     async def custom_remove(self, ctx: discord.ApplicationContext, name: discord.Option(str, "Command name")):
@@ -79,7 +108,10 @@ class CustomCommandsModule(commands.Cog):
         # Remove from bot tree
         if self.bot.tree.get_command(name):
             self.bot.tree.remove_command(name)
-        await self.bot.tree.sync()
+        try:
+            await self.bot.tree.sync()
+        except Exception:
+            pass
 
     @commands.slash_command(name="custom_list", description="List all custom commands")
     async def custom_list(self, ctx: discord.ApplicationContext):

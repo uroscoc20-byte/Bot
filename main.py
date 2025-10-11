@@ -17,7 +17,13 @@ if not TOKEN:
 # ---------- BOT INTENTS ----------
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="/", intents=intents)
+async def fetch_prefix(bot, message):
+    try:
+        return await db.get_prefix()
+    except Exception:
+        return "!"
+
+bot = commands.Bot(command_prefix=fetch_prefix, intents=intents)
 
 # ---------- EVENTS ----------
 @bot.event
