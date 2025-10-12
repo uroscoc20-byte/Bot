@@ -17,7 +17,7 @@ class SetupModule(commands.Cog):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You are not allowed to run this.", ephemeral=True)
             return
-        restricted_ids = [int(r.strip()) for r in restricted.split(",")] if restricted else []
+        restricted_ids = [int(r.strip()) for r in (restricted or "").split(",") if r and r.strip().isdigit()] if restricted else []
         await db.set_roles(admin.id, staff.id, helper.id, restricted_ids)
         await ctx.respond("✅ Roles configuration updated!")
 
@@ -31,6 +31,17 @@ class SetupModule(commands.Cog):
             return
         await db.set_transcript_channel(channel.id)
         await ctx.respond(f"✅ Transcript channel set to {channel.mention}")
+
+    @commands.slash_command(name="setup_audit_channel", description="Set audit log channel (Admin only)")
+    async def setup_audit_channel(
+        self, ctx: discord.ApplicationContext,
+        channel: discord.Option(discord.TextChannel, "Select audit log channel")
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        await db.save_config("audit_channel", {"id": channel.id})
+        await ctx.respond(f"✅ Audit channel set to {channel.mention}")
 
     @commands.slash_command(name="setup_ticket_category", description="Set Discord category for tickets (Admin only)")
     async def setup_ticket_category(
@@ -143,8 +154,8 @@ class SetupModule(commands.Cog):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You are not allowed to run this.", ephemeral=True)
             return
-        removed = await db.remove_category(name)
-        if removed:
+        cursor_deleted = await db.remove_category(name)
+        if cursor_deleted:
             await ctx.respond(f"✅ Category `{name}` removed.")
         else:
             await ctx.respond(f"⚠ Category `{name}` does not exist.", ephemeral=True)

@@ -16,21 +16,8 @@ class AuditLogModule(commands.Cog):
         ch = guild.get_channel(int(channel_id))
         return ch if isinstance(ch, discord.TextChannel) else None
 
-    def _format_options(self, data: dict) -> str:
-        # Best-effort format of provided options
-        try:
-            opts = data.get("options") or []
-            parts = []
-            for opt in opts:
-                name = opt.get("name")
-                value = opt.get("value")
-                parts.append(f"{name}={value}")
-            return ", ".join(parts) if parts else "no-args"
-        except Exception:
-            return "no-args"
-
     @commands.Cog.listener()
-    async def on_application_command(self, ctx: discord.ApplicationContext):
+    async def on_application_command_completion(self, ctx: discord.ApplicationContext):
         try:
             guild = ctx.guild
             if not guild:
@@ -39,11 +26,20 @@ class AuditLogModule(commands.Cog):
             if not ch:
                 return
             cmd_name = ctx.command.qualified_name if ctx.command else "unknown"
-            data = getattr(ctx, "data", None)
-            if not data and hasattr(ctx, "interaction"):
-                data = getattr(ctx.interaction, "data", {}) or {}
-            opts_str = self._format_options(data or {})
-            ts = datetime.utcnow().isoformat(timespec="seconds")
+            # Try to collect arguments from the context or interaction
+            opts = []
+            try:
+                if hasattr(ctx, "options") and ctx.options:
+                    for k, v in ctx.options.items():
+                        opts.append(f"{k}={v}")
+                elif hasattr(ctx, "interaction") and getattr(ctx.interaction, "data", None):
+                    d = ctx.interaction.data
+                    for o in d.get("options", []) or []:
+                        opts.append(f"{o.get('name')}={o.get('value')}")
+            except Exception:
+                pass
+            opts_str = ", ".join(opts) if opts else "no-args"
+
             embed = discord.Embed(
                 title="🛡️ Command Used",
                 description=f"`/{cmd_name}`",
@@ -53,10 +49,9 @@ class AuditLogModule(commands.Cog):
             embed.add_field(name="User", value=f"{ctx.user.mention} (`{ctx.user.id}`)", inline=False)
             embed.add_field(name="Channel", value=f"{ctx.channel.mention} (`{ctx.channel.id}`)", inline=False)
             embed.add_field(name="Args", value=opts_str, inline=False)
-            embed.set_footer(text=f"UTC {ts}")
             await ch.send(embed=embed)
         except Exception:
-            # Avoid breaking user flows due to audit issues
+            # Never break user flow due to audit issues
             pass
 
 def setup(bot):

@@ -426,7 +426,7 @@ class TicketModule(commands.Cog):
             return
 
         changed = False
-        for i in range(len(ticket_info["helpers"])):
+        for i in range(len(ticket_info["helpers"]))):
             if ticket_info["helpers"][i] == user.id:
                 ticket_info["helpers"][i] = None
                 changed = True
@@ -467,7 +467,6 @@ class TicketModule(commands.Cog):
             if interaction.user.id == ticket_info["requestor"]:
                 await interaction.response.send_message("You cannot join your own ticket.", ephemeral=True)
                 return
-            # Block users with restricted roles from joining
             roles_cfg = await db.get_roles()
             restricted_ids = roles_cfg.get("restricted", []) if roles_cfg else []
             member_role_ids = [r.id for r in interaction.user.roles]
@@ -519,13 +518,19 @@ class TicketModule(commands.Cog):
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
-                # 1st close: only remove helpers' channel access; keep embed and helpers list
+                # 1st close: only remove helpers' channel access (but keep staff/admin)
                 helpers = [h for h in ticket_info["helpers"] if h]
+                roles_cfg = await db.get_roles()
+                staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+                admin_role_id = roles_cfg.get("admin") if roles_cfg else None
                 for uid in helpers:
                     member = interaction.guild.get_member(uid)
                     try:
                         if member:
-                            await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
+                            is_admin = admin_role_id and any(r.id == admin_role_id for r in member.roles)
+                            is_staff_member = staff_role_id and any(r.id == staff_role_id for r in member.roles)
+                            if not (is_admin or is_staff_member):
+                                await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
                     except Exception:
                         pass
                 ticket_info["closed_stage"] = 1
