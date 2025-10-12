@@ -541,13 +541,19 @@ class TicketModule(commands.Cog):
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
-                # 1st close: only remove helpers' channel access; keep embed and helpers list
+                # 1st close: only remove helpers' channel access (but keep staff/admin)
                 helpers = [h for h in ticket_info["helpers"] if h]
+                roles_cfg = await db.get_roles()
+                staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+                admin_role_id = roles_cfg.get("admin") if roles_cfg else None
                 for uid in helpers:
                     member = interaction.guild.get_member(uid)
                     try:
                         if member:
-                            await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
+                            is_admin = admin_role_id and any(r.id == admin_role_id for r in member.roles)
+                            is_staff = staff_role_id and any(r.id == staff_role_id for r in member.roles)
+                            if not (is_admin or is_staff):
+                                await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
                     except Exception:
                         pass
                 ticket_info["closed_stage"] = 1

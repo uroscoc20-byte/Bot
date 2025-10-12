@@ -14,8 +14,10 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord
     lines = []
     top_emojis = ["🥇", "🥈", "🥉"]
     for idx, (user_id, pts) in enumerate(sorted_points[start:end], start=start + 1):
-        emoji = top_emojis[idx - 1] if idx <= 3 else "🏷️"
-        lines.append(f"#{idx} {emoji} <@{user_id}> — **{pts}**")
+        prefix = f"#{idx} "
+        if idx <= 3:
+            prefix += f"{top_emojis[idx - 1]} "
+        lines.append(f"{prefix}<@{user_id}> — **{pts}**")
 
     description = "\n".join(lines) if lines else "No entries yet."
     embed = discord.Embed(
