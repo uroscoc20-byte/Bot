@@ -79,12 +79,12 @@ async def generate_ticket_transcript(ticket_info, rewarded=False):
     )
 
     embed = discord.Embed(
-        title="Ticket Transcript",
+        title="📝 Ticket Transcript",
         description=f"Category: **{ticket_info['category']}**",
         color=discord.Color.blurple(),
     )
     embed.add_field(
-        name="Info",
+        name="ℹ️ Info",
         value=(
             f"Requestor: <@{ticket_info['requestor']}>\n"
             f"Helpers: {', '.join(f'<@{h}>' for h in ticket_info['helpers'] if h) or 'None'}\n"
@@ -99,7 +99,7 @@ async def generate_ticket_transcript(ticket_info, rewarded=False):
         snippet = "\n".join(transcript_lines[-30:])
         if len(snippet) > 1000:
             snippet = snippet[-1000:]
-        embed.add_field(name="Messages (recent)", value=f"```\n{snippet}\n```", inline=False)
+        embed.add_field(name="💬 Messages (recent)", value=f"```\n{snippet}\n```", inline=False)
 
     transcript_channel_id = await db.get_transcript_channel()
     if transcript_channel_id:
@@ -178,17 +178,33 @@ class TicketModal(Modal):
                 return
 
             embed = discord.Embed(
-                title=f"{self.category} Ticket #{number}",
-                description=f"Requestor: {interaction.user.mention}",
+                title=f"🎫 {self.category} Ticket #{number}",
+                description=f"Requester: **{interaction.user.mention}**",
                 color=0x00FF00,
             )
+            embed.timestamp = datetime.utcnow()
             for ti in self.inputs:
                 embed.add_field(name=ti.label, value=ti.value or "—", inline=False)
             for i in range(self.slots):
-                embed.add_field(name=f"Helper Slot {i+1}", value="Empty", inline=True)
+                embed.add_field(name=f"👤 Helper Slot {i+1}", value="Empty", inline=True)
+
+            # Mention helper role and optionally give view-only access so they can find/join
+            roles_cfg = await db.get_roles()
+            helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+            helper_role = guild.get_role(helper_role_id) if helper_role_id else None
+
+            if helper_role:
+                overwrites[helper_role] = discord.PermissionOverwrite(
+                    view_channel=True, send_messages=False, read_message_history=True
+                )
 
             view = TicketView(self.category, interaction.user.id)
-            msg = await ticket_channel.send(embed=embed, view=view)
+            mention_text = helper_role.mention if helper_role else ""
+            msg = await ticket_channel.send(content=mention_text, embed=embed, view=view)
+            try:
+                await msg.pin(reason="Pin ticket for visibility")
+            except Exception:
+                pass
 
             active_tickets[ticket_channel.id] = {
                 "category": self.category,
@@ -238,9 +254,9 @@ class TicketView(View):
         super().__init__(timeout=None)
         self.category = category
         self.requestor_id = requestor_id
-        self.add_item(Button(label="Join Ticket", style=discord.ButtonStyle.green, custom_id="join_ticket"))
+        self.add_item(Button(label="Join", style=discord.ButtonStyle.green, custom_id="join_ticket", emoji="➕"))
         # Removed generic remove button; use /ticket_kick for explicit choice
-        self.add_item(Button(label="Close Ticket", style=discord.ButtonStyle.gray, custom_id="close_ticket"))
+        self.add_item(Button(label="Close", style=discord.ButtonStyle.gray, custom_id="close_ticket", emoji="🧹"))
 
 
 class RewardChoiceView(View):
