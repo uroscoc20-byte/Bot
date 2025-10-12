@@ -528,8 +528,9 @@ class TicketModule(commands.Cog):
                 is_staff = is_staff or any(r.id == admin_role_id for r in interaction.user.roles)
             if staff_role_id:
                 is_staff = is_staff or any(r.id == staff_role_id for r in interaction.user.roles)
-            if not is_staff:
-                await interaction.response.send_message("Only staff/admin can close ticket.", ephemeral=True)
+            is_requestor = interaction.user.id == ticket_info["requestor"]
+            if not (is_staff or is_requestor):
+                await interaction.response.send_message("Only staff, admins, or the requestor can close this ticket.", ephemeral=True)
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
