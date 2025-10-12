@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from leaderboard import create_leaderboard_embed
+from leaderboard import create_leaderboard_embed, LeaderboardView
 from database import db
 
 ACCENT = 0x5865F2
@@ -42,11 +42,14 @@ class PointsModule(commands.Cog):
         page: discord.Option(int, "Page number", required=False, default=1),
     ):
         rows = await db.get_leaderboard()
+        per_page = 10
+        total_pages = max(1, (len(rows) + per_page - 1) // per_page)
         if not rows:
             await ctx.respond("Leaderboard is empty.")
             return
-        embed = await create_leaderboard_embed(page=page, per_page=10)
-        await ctx.respond(embed=embed)
+        embed = await create_leaderboard_embed(page=page, per_page=per_page)
+        view = LeaderboardView(page, total_pages, per_page)
+        await ctx.respond(embed=embed, view=view)
 
     @commands.slash_command(name="points_reset", description="Reset all points (Admin only)")
     async def points_reset(self, ctx: discord.ApplicationContext):

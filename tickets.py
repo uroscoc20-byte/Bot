@@ -467,11 +467,19 @@ class TicketModule(commands.Cog):
             if interaction.user.id == ticket_info["requestor"]:
                 await interaction.response.send_message("You cannot join your own ticket.", ephemeral=True)
                 return
+            # Block users with restricted roles from joining
             roles_cfg = await db.get_roles()
             restricted_ids = roles_cfg.get("restricted", []) if roles_cfg else []
             member_role_ids = [r.id for r in interaction.user.roles]
             if any(rid in member_role_ids for rid in restricted_ids):
                 await interaction.response.send_message("You cannot join this ticket.", ephemeral=True)
+                return
+            # Prevent duplicate joins and enforce capacity
+            if interaction.user.id in [h for h in ticket_info["helpers"] if h]:
+                await interaction.response.send_message("You are already listed as a helper on this ticket.", ephemeral=True)
+                return
+            if all(h is not None for h in ticket_info["helpers"]):
+                await interaction.response.send_message("This ticket is full. No helper slots left.", ephemeral=True)
                 return
             for i in range(len(ticket_info["helpers"])):
                 if ticket_info["helpers"][i] is None:
@@ -511,6 +519,7 @@ class TicketModule(commands.Cog):
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
+                # 1st close: only remove helpers' channel access; keep embed and helpers list
                 helpers = [h for h in ticket_info["helpers"] if h]
                 for uid in helpers:
                     member = interaction.guild.get_member(uid)
@@ -522,9 +531,11 @@ class TicketModule(commands.Cog):
                 ticket_info["closed_stage"] = 1
                 await interaction.response.send_message("Helpers removed from channel. Click again to choose reward.", ephemeral=True)
             elif stage == 1:
+                # 2nd close: prompt reward/no reward
                 view = RewardChoiceView(interaction.channel.id)
                 await interaction.response.send_message("Reward helpers?", view=view, ephemeral=True)
             else:
+                # 3rd close: delete channel (transcript should be generated on stage 2)
                 await interaction.response.send_message("Deleting ticket channel...", ephemeral=True)
                 active_tickets.pop(channel_id, None)
                 try:

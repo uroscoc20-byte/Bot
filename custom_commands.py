@@ -113,7 +113,7 @@ class CustomCommandsModule(commands.Cog):
         embed.add_field(
             name="📊 Points & Leaderboard",
             value=(
-                "`/leaderboard [page]` — View top helpers\n"
+                "`/leaderboard [page]` — View top helpers (with ◀️ ▶️ buttons)\n"
                 "`/points [user]` — See someone's points\n"
                 "`/points_add @user amount` — Add points (admin)\n"
                 "`/points_remove @user amount` — Remove points (admin)\n"
@@ -142,7 +142,8 @@ class CustomCommandsModule(commands.Cog):
                 "`/setup_panel` — Customize panel text/color\n"
                 "`/setup_maintenance` — Toggle ticket availability\n"
                 "`/setup_category_add|remove|list` — Manage categories\n"
-                "`/custom_add|custom_remove|custom_list` — Manage custom slash commands"
+                "`/custom_add|custom_remove|custom_list` — Manage custom slash commands\n"
+                "`/setup_audit_channel` — Set audit log channel (admin)"
             ),
             inline=False,
         )
