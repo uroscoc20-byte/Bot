@@ -154,8 +154,8 @@ class SetupModule(commands.Cog):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You are not allowed to run this.", ephemeral=True)
             return
-        cursor_deleted = await db.remove_category(name)
-        if cursor_deleted:
+        removed = await db.remove_category(name)
+        if removed:
             await ctx.respond(f"✅ Category `{name}` removed.")
         else:
             await ctx.respond(f"⚠ Category `{name}` does not exist.", ephemeral=True)

@@ -71,7 +71,6 @@ class Database:
 
     async def get_roles(self):
         roles = await self.load_config("roles") or {}
-        # Normalize types and ensure keys exist
         admin = roles.get("admin")
         staff = roles.get("staff")
         helper = roles.get("helper")

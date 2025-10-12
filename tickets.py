@@ -426,7 +426,7 @@ class TicketModule(commands.Cog):
             return
 
         changed = False
-        for i in range(len(ticket_info["helpers"]))):
+        for i in range(len(ticket_info["helpers"])):
             if ticket_info["helpers"][i] == user.id:
                 ticket_info["helpers"][i] = None
                 changed = True

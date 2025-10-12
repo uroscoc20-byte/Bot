@@ -4,6 +4,21 @@ from discord.ext import commands
 from database import db
 from datetime import datetime
 
+def _flatten_options_from_interaction(interaction: discord.Interaction) -> list[str]:
+    try:
+        data = getattr(interaction, "data", None) or {}
+        def walk(opts):
+            items = []
+            for o in opts or []:
+                if o.get("options"):
+                    items.extend(walk(o.get("options")))
+                elif "value" in o:
+                    items.append(f"{o.get('name')}={o.get('value')}")
+            return items
+        return walk(data.get("options", []))
+    except Exception:
+        return []
+
 class AuditLogModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -18,6 +33,7 @@ class AuditLogModule(commands.Cog):
 
     @commands.Cog.listener()
     async def on_application_command_completion(self, ctx: discord.ApplicationContext):
+        # Fires for ALL slash commands that finish successfully (including /panel, /points_add, etc.)
         try:
             guild = ctx.guild
             if not guild:
@@ -25,19 +41,20 @@ class AuditLogModule(commands.Cog):
             ch = await self._get_audit_channel(guild)
             if not ch:
                 return
+
             cmd_name = ctx.command.qualified_name if ctx.command else "unknown"
-            # Try to collect arguments from the context or interaction
+
+            # Collect args from ctx or interaction
             opts = []
-            try:
-                if hasattr(ctx, "options") and ctx.options:
+            if hasattr(ctx, "options") and ctx.options:
+                try:
                     for k, v in ctx.options.items():
                         opts.append(f"{k}={v}")
-                elif hasattr(ctx, "interaction") and getattr(ctx.interaction, "data", None):
-                    d = ctx.interaction.data
-                    for o in d.get("options", []) or []:
-                        opts.append(f"{o.get('name')}={o.get('value')}")
-            except Exception:
-                pass
+                except Exception:
+                    pass
+            if not opts and hasattr(ctx, "interaction"):
+                opts = _flatten_options_from_interaction(ctx.interaction)
+
             opts_str = ", ".join(opts) if opts else "no-args"
 
             embed = discord.Embed(

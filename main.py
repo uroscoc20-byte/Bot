@@ -35,8 +35,8 @@ initial_extensions = [
     "tickets",
     "points",
     "custom_commands",
-    "bot_speak",      # optional
-    "audit_log",      # audit logging module
+    "bot_speak",   # optional
+    "audit_log",   # audit logging module
 ]
 
 # ---------- ASYNC MAIN ----------
