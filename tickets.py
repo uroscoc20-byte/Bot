@@ -19,7 +19,7 @@ DEFAULT_POINT_VALUES = {
 }
 DEFAULT_HELPER_SLOTS = {"7-Man Ultra Daily Express": 6, "Grim Express": 6}
 DEFAULT_SLOTS = 3
-DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room number?*", "Anything else?"]
+DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room?*", "Anything else?"]
 
 def get_fallback_category(category_name: str):
     return {
@@ -147,7 +147,7 @@ class TicketModal(Modal):
 
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
             }
 
             parent_category = None
@@ -191,11 +191,24 @@ class TicketModal(Modal):
             # Mention helper role and optionally give view-only access so they can find/join
             roles_cfg = await db.get_roles()
             helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+            staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+            admin_role_id = roles_cfg.get("admin") if roles_cfg else None
             helper_role = guild.get_role(helper_role_id) if helper_role_id else None
+            staff_role = guild.get_role(staff_role_id) if staff_role_id else None
+            admin_role = guild.get_role(admin_role_id) if admin_role_id else None
 
             if helper_role:
                 overwrites[helper_role] = discord.PermissionOverwrite(
                     view_channel=True, send_messages=False, read_message_history=True
+                )
+            # Ensure staff/admin roles can access and help
+            if staff_role:
+                overwrites[staff_role] = discord.PermissionOverwrite(
+                    view_channel=True, send_messages=True, read_message_history=True
+                )
+            if admin_role:
+                overwrites[admin_role] = discord.PermissionOverwrite(
+                    view_channel=True, send_messages=True, read_message_history=True
                 )
 
             view = TicketView(self.category, interaction.user.id)
@@ -472,12 +485,15 @@ class TicketModule(commands.Cog):
                 await interaction.channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
             except Exception:
                 pass
-            embed = ticket_info["embed_msg"].embeds[0]
-            base_index = len(embed.fields) - len(ticket_info["helpers"])
-            for i, helper_id in enumerate(ticket_info["helpers"]):
-                value = f"<@{helper_id}>" if helper_id else "Empty"
-                embed.set_field_at(base_index + i, name=f"Helper Slot {i+1}", value=value, inline=True)
-            await ticket_info["embed_msg"].edit(embed=embed)
+            try:
+                embed = ticket_info["embed_msg"].embeds[0]
+                base_index = len(embed.fields) - len(ticket_info["helpers"])
+                for i, helper_id in enumerate(ticket_info["helpers"]):
+                    value = f"<@{helper_id}>" if helper_id else "Empty"
+                    embed.set_field_at(base_index + i, name=f"Helper Slot {i+1}", value=value, inline=True)
+                await ticket_info["embed_msg"].edit(embed=embed)
+            except Exception:
+                pass
             await interaction.response.send_message("You joined the ticket!", ephemeral=True)
 
         elif custom_id == "remove_helper":
