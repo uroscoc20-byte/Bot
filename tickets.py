@@ -19,7 +19,7 @@ DEFAULT_POINT_VALUES = {
 }
 DEFAULT_HELPER_SLOTS = {"7-Man Ultra Daily Express": 6, "Grim Express": 6}
 DEFAULT_SLOTS = 3
-DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room number?*", "Anything else?"]
+DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room?*", "Anything else?"]
 
 def get_fallback_category(category_name: str):
     return {
@@ -79,12 +79,12 @@ async def generate_ticket_transcript(ticket_info, rewarded=False):
     )
 
     embed = discord.Embed(
-        title="🧾 Ticket Transcript",
+        title="📝 Ticket Transcript",
         description=f"Category: **{ticket_info['category']}**",
         color=discord.Color.blurple(),
     )
     embed.add_field(
-        name="Info",
+        name="ℹ️ Info",
         value=(
             f"Requestor: <@{ticket_info['requestor']}>\n"
             f"Helpers: {', '.join(f'<@{h}>' for h in ticket_info['helpers'] if h) or 'None'}\n"
@@ -147,7 +147,7 @@ class TicketModal(Modal):
 
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
             }
 
             parent_category = None
@@ -188,19 +188,56 @@ class TicketModal(Modal):
             for i in range(self.slots):
                 embed.add_field(name=f"👤 Helper Slot {i+1}", value="Empty", inline=True)
 
-            # Mention helper role and optionally give view-only access so they can find/join
+            # Mention helper role and set permissions
             roles_cfg = await db.get_roles()
             helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+            staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+            admin_role_id = roles_cfg.get("admin") if roles_cfg else None
             helper_role = guild.get_role(helper_role_id) if helper_role_id else None
+            staff_role = guild.get_role(staff_role_id) if staff_role_id else None
+            admin_role = guild.get_role(admin_role_id) if admin_role_id else None
 
-            if helper_role:
-                overwrites[helper_role] = discord.PermissionOverwrite(
-                    view_channel=True, send_messages=False, read_message_history=True
-                )
+            # Ensure roles have proper access in this channel
+            try:
+                if helper_role:
+                    await ticket_channel.set_permissions(
+                        helper_role,
+                        view_channel=True,
+                        send_messages=True,
+                        read_message_history=True,
+                        attach_files=True,
+                    )
+                if staff_role:
+                    await ticket_channel.set_permissions(
+                        staff_role,
+                        view_channel=True,
+                        send_messages=True,
+                        read_message_history=True,
+                        manage_messages=True,
+                        attach_files=True,
+                    )
+                if admin_role:
+                    await ticket_channel.set_permissions(
+                        admin_role,
+                        view_channel=True,
+                        send_messages=True,
+                        read_message_history=True,
+                        manage_messages=True,
+                        manage_channels=True,
+                        attach_files=True,
+                    )
+            except Exception:
+                pass
 
             view = TicketView(self.category, interaction.user.id)
             mention_text = helper_role.mention if helper_role else ""
-            msg = await ticket_channel.send(content=mention_text, embed=embed, view=view)
+            allowed = None
+            if helper_role:
+                try:
+                    allowed = discord.AllowedMentions(roles=[helper_role])
+                except Exception:
+                    allowed = None
+            msg = await ticket_channel.send(content=mention_text, embed=embed, view=view, allowed_mentions=allowed)
             try:
                 await msg.pin(reason="Pin ticket for visibility")
             except Exception:
@@ -218,23 +255,15 @@ class TicketModal(Modal):
             await interaction.followup.send(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
 
         except Exception as e:
-            # Final safeguard to surface tracebacks instead of Discord's generic error
             logger.exception("Error during ticket modal submit: %s", e)
             try:
                 if interaction.response.is_done():
-                    await interaction.followup.send(
-                        "⚠️ Something went wrong while processing your ticket.",
-                        ephemeral=True,
-                    )
+                    await interaction.followup.send("⚠️ Something went wrong while processing your ticket.", ephemeral=True)
                 else:
-                    await interaction.response.send_message(
-                        "⚠️ Something went wrong while processing your ticket.",
-                        ephemeral=True,
-                    )
+                    await interaction.response.send_message("⚠️ Something went wrong while processing your ticket.", ephemeral=True)
             except Exception:
                 pass
 
-    # Py-cord uses `callback` for modal submissions; keep compatibility by delegating
     async def callback(self, interaction: discord.Interaction):
         try:
             await self.on_submit(interaction)
@@ -254,9 +283,8 @@ class TicketView(View):
         super().__init__(timeout=None)
         self.category = category
         self.requestor_id = requestor_id
-        self.add_item(Button(label="Join Ticket ✋", style=discord.ButtonStyle.green, custom_id="join_ticket", emoji="🟢"))
-        # Removed generic remove button; use /ticket_kick for explicit choice
-        self.add_item(Button(label="Close Ticket 🔒", style=discord.ButtonStyle.gray, custom_id="close_ticket", emoji="🔒"))
+        self.add_item(Button(label="Join", style=discord.ButtonStyle.green, custom_id="join_ticket", emoji="➕"))
+        self.add_item(Button(label="Close", style=discord.ButtonStyle.gray, custom_id="close_ticket", emoji="🧹"))
 
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
@@ -309,11 +337,8 @@ class TicketSelect(Select):
             await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
             return
 
-        if not bot_can_manage_channels(interaction):
-            await interaction.response.send_message(
-                "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
-                ephemeral=True,
-            )
+        if not bot_can_manage_channels(interaction)):
+            await interaction.response.send_message("I need the 'Manage Channels' permission to create your ticket.", ephemeral=True)
             return
 
         category_name = self.values[0]
@@ -347,10 +372,7 @@ class TicketModule(commands.Cog):
             return
 
         if not ctx.guild.me.guild_permissions.manage_channels:
-            await ctx.respond(
-                "I need the 'Manage Channels' permission to create ticket channels. Please grant it and try again.",
-                ephemeral=True,
-            )
+            await ctx.respond("I need the 'Manage Channels' permission to create ticket channels.", ephemeral=True)
             return
 
         maintenance = await db.get_maintenance()
@@ -375,20 +397,11 @@ class TicketModule(commands.Cog):
         )
         services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
         embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
-        embed.add_field(
-            name="ℹ️ How it works",
-            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
-            inline=False,
-        )
+        embed.add_field(name="ℹ️ How it works", value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!", inline=False)
         await ctx.respond(embed=embed, view=view)
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
-    async def ticket_kick(
-        self,
-        ctx: discord.ApplicationContext,
-        user: discord.Option(discord.Member, "Member to remove from this ticket"),
-        from_channel: discord.Option(bool, "Also remove channel access?", required=False, default=False)
-    ):
+    async def ticket_kick(self, ctx, user: discord.Member, from_channel: bool = False):
         roles_cfg = await db.get_roles()
         staff_role_id = roles_cfg.get("staff")
         admin_role_id = roles_cfg.get("admin")
@@ -450,7 +463,6 @@ class TicketModule(commands.Cog):
             if interaction.user.id == ticket_info["requestor"]:
                 await interaction.response.send_message("You cannot join your own ticket.", ephemeral=True)
                 return
-            # Block users with restricted roles from joining
             roles_cfg = await db.get_roles()
             restricted_ids = roles_cfg.get("restricted", []) if roles_cfg else []
             member_role_ids = [r.id for r in interaction.user.roles]
@@ -465,16 +477,18 @@ class TicketModule(commands.Cog):
                 await interaction.channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
             except Exception:
                 pass
-            embed = ticket_info["embed_msg"].embeds[0]
-            base_index = len(embed.fields) - len(ticket_info["helpers"])
-            for i, helper_id in enumerate(ticket_info["helpers"]):
-                value = f"<@{helper_id}>" if helper_id else "Empty"
-                embed.set_field_at(base_index + i, name=f"Helper Slot {i+1}", value=value, inline=True)
-            await ticket_info["embed_msg"].edit(embed=embed)
+            try:
+                embed = ticket_info["embed_msg"].embeds[0]
+                base_index = len(embed.fields) - len(ticket_info["helpers"])
+                for i, helper_id in enumerate(ticket_info["helpers"]):
+                    value = f"<@{helper_id}>" if helper_id else "Empty"
+                    embed.set_field_at(base_index + i, name=f"Helper Slot {i+1}", value=value, inline=True)
+                await ticket_info["embed_msg"].edit(embed=embed)
+            except Exception:
+                pass
             await interaction.response.send_message("You joined the ticket!", ephemeral=True)
 
         elif custom_id == "remove_helper":
-            # Deprecated path; instruct to use /ticket_kick for explicit choice
             await interaction.response.send_message("Use /ticket_kick to remove a specific member.", ephemeral=True)
             return
 
@@ -487,12 +501,12 @@ class TicketModule(commands.Cog):
                 is_staff = is_staff or any(r.id == admin_role_id for r in interaction.user.roles)
             if staff_role_id:
                 is_staff = is_staff or any(r.id == staff_role_id for r in interaction.user.roles)
-            if not is_staff:
-                await interaction.response.send_message("Only staff/admin can close ticket.", ephemeral=True)
+            is_requestor = interaction.user.id == ticket_info["requestor"]
+            if not (is_staff or is_requestor):
+                await interaction.response.send_message("Only staff, admins, or the requestor can close this ticket.", ephemeral=True)
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
-                # 1st close: only remove helpers' channel access; keep embed and helpers list
                 helpers = [h for h in ticket_info["helpers"] if h]
                 for uid in helpers:
                     member = interaction.guild.get_member(uid)
@@ -504,11 +518,9 @@ class TicketModule(commands.Cog):
                 ticket_info["closed_stage"] = 1
                 await interaction.response.send_message("Helpers removed from channel. Click again to choose reward.", ephemeral=True)
             elif stage == 1:
-                # 2nd close: prompt reward/no reward
                 view = RewardChoiceView(interaction.channel.id)
                 await interaction.response.send_message("Reward helpers?", view=view, ephemeral=True)
             else:
-                # 3rd close: delete channel (transcript should be generated on stage 2)
                 await interaction.response.send_message("Deleting ticket channel...", ephemeral=True)
                 active_tickets.pop(channel_id, None)
                 try:
