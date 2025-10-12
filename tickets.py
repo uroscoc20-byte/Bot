@@ -518,29 +518,37 @@ class TicketModule(commands.Cog):
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
-                # 1st close: only remove helpers' channel access (but keep staff/admin)
+                # 1st close: only remove helpers' channel access (keep staff/admin)
                 helpers = [h for h in ticket_info["helpers"] if h]
-                roles_cfg = await db.get_roles()
+                # Revoke helper role view access for the channel
+                helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+                if helper_role_id:
+                    helper_role = interaction.guild.get_role(helper_role_id)
+                    if helper_role:
+                        try:
+                            await interaction.channel.set_permissions(helper_role, view_channel=False, send_messages=False)
+                        except Exception:
+                            pass
+                # Revoke per-user access for non-staff/non-admin helpers
                 staff_role_id = roles_cfg.get("staff") if roles_cfg else None
                 admin_role_id = roles_cfg.get("admin") if roles_cfg else None
                 for uid in helpers:
                     member = interaction.guild.get_member(uid)
+                    if not member:
+                        continue
                     try:
-                        if member:
-                            is_admin = admin_role_id and any(r.id == admin_role_id for r in member.roles)
-                            is_staff_member = staff_role_id and any(r.id == staff_role_id for r in member.roles)
-                            if not (is_admin or is_staff_member):
-                                await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
+                        is_admin = bool(admin_role_id and any(r.id == admin_role_id for r in member.roles))
+                        is_staff_member = bool(staff_role_id and any(r.id == staff_role_id for r in member.roles))
+                        if not (is_admin or is_staff_member):
+                            await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
                     except Exception:
                         pass
                 ticket_info["closed_stage"] = 1
                 await interaction.response.send_message("Helpers removed from channel. Click again to choose reward.", ephemeral=True)
             elif stage == 1:
-                # 2nd close: prompt reward/no reward
                 view = RewardChoiceView(interaction.channel.id)
                 await interaction.response.send_message("Reward helpers?", view=view, ephemeral=True)
             else:
-                # 3rd close: delete channel (transcript should be generated on stage 2)
                 await interaction.response.send_message("Deleting ticket channel...", ephemeral=True)
                 active_tickets.pop(channel_id, None)
                 try:
