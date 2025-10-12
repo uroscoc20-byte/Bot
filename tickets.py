@@ -367,11 +367,12 @@ class TicketModule(commands.Cog):
         )
         await ctx.respond(embed=embed, view=view)
 
-    @commands.slash_command(name="ticket_kick", description="Remove a user from the current ticket (staff/admin only)")
+    @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
     async def ticket_kick(
         self,
         ctx: discord.ApplicationContext,
-        user: discord.Option(discord.Member, "Member to remove from this ticket")
+        user: discord.Option(discord.Member, "Member to remove from this ticket"),
+        from_channel: discord.Option(bool, "Also remove channel access?", required=False, default=False)
     ):
         roles_cfg = await db.get_roles()
         staff_role_id = roles_cfg.get("staff")
@@ -399,10 +400,11 @@ class TicketModule(commands.Cog):
                 changed = True
                 break
 
-        try:
-            await ctx.channel.set_permissions(user, view_channel=False, send_messages=False)
-        except Exception:
-            pass
+        if from_channel:
+            try:
+                await ctx.channel.set_permissions(user, view_channel=False, send_messages=False)
+            except Exception:
+                pass
 
         if changed:
             try:
@@ -415,7 +417,8 @@ class TicketModule(commands.Cog):
             except Exception:
                 pass
 
-        await ctx.respond(f"Removed {user.mention} from this ticket.", ephemeral=True)
+        where = "embed only" if not from_channel else "embed and channel"
+        await ctx.respond(f"Removed {user.mention} from this ticket ({where}).", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
@@ -456,32 +459,9 @@ class TicketModule(commands.Cog):
             await interaction.response.send_message("You joined the ticket!", ephemeral=True)
 
         elif custom_id == "remove_helper":
-            roles_cfg = await db.get_roles()
-            staff_role_id = roles_cfg.get("staff")
-            admin_role_id = roles_cfg.get("admin")
-            is_staff = interaction.user.guild_permissions.administrator
-            if admin_role_id:
-                is_staff = is_staff or any(r.id == admin_role_id for r in interaction.user.roles)
-            if staff_role_id:
-                is_staff = is_staff or any(r.id == staff_role_id for r in interaction.user.roles)
-            if not is_staff:
-                await interaction.response.send_message("Only staff/admin can remove helpers.", ephemeral=True)
-                return
-            for i in range(len(ticket_info["helpers"])):
-                if ticket_info["helpers"][i]:
-                    ticket_info["helpers"][i] = None
-                    break
-            try:
-                await interaction.channel.set_permissions(interaction.user, view_channel=False, send_messages=False)
-            except Exception:
-                pass
-            embed = ticket_info["embed_msg"].embeds[0]
-            base_index = len(embed.fields) - len(ticket_info["helpers"])
-            for i, helper_id in enumerate(ticket_info["helpers"]):
-                value = f"<@{helper_id}>" if helper_id else "Empty"
-                embed.set_field_at(base_index + i, name=f"Helper Slot {i+1}", value=value, inline=True)
-            await ticket_info["embed_msg"].edit(embed=embed)
-            await interaction.response.send_message("Helper removed from embed.", ephemeral=True)
+            # Deprecated path; instruct to use /ticket_kick for explicit choice
+            await interaction.response.send_message("Use /ticket_kick to remove a specific member.", ephemeral=True)
+            return
 
         elif custom_id == "close_ticket":
             roles_cfg = await db.get_roles()
