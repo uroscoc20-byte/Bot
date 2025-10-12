@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Select, Modal, InputText
+import logging
 from points import PointsModule
 from database import db
 from datetime import datetime
@@ -41,6 +42,9 @@ def parse_question_required(label: str):
 
 # ---------- STORAGE ----------
 active_tickets = {}
+
+# Use module-level logger for error visibility in hosting logs
+logger = logging.getLogger(__name__)
 
 # ---------- PERMISSIONS ----------
 def bot_can_manage_channels(interaction: discord.Interaction) -> bool:
@@ -91,78 +95,111 @@ class TicketModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
+        # Always try to defer quickly and ephemerally to avoid 3s timeouts
         try:
-            await interaction.response.defer()
+            await interaction.response.defer(ephemeral=True)
         except Exception:
             pass
 
-        if not bot_can_manage_channels(interaction):
-            await interaction.followup.send(
-                "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
-                ephemeral=True,
-            )
-            return
-
         try:
-            number = await db.increment_ticket_number(self.category)
-        except Exception:
-            number = 1
-        channel_name = f"{self.category.lower().replace(' ', '-')}-{number}"
+            if not bot_can_manage_channels(interaction):
+                await interaction.followup.send(
+                    "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
+                    ephemeral=True,
+                )
+                return
 
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
+            try:
+                number = await db.increment_ticket_number(self.category)
+            except Exception:
+                number = 1
+            channel_name = f"{self.category.lower().replace(' ', '-')}-{number}"
 
-        parent_category = None
-        try:
-            cat_id = await db.get_ticket_category()
-            cand = guild.get_channel(cat_id) if cat_id else None
-            parent_category = cand if isinstance(cand, discord.CategoryChannel) else None
-        except Exception:
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+            }
+
             parent_category = None
+            try:
+                cat_id = await db.get_ticket_category()
+                cand = guild.get_channel(cat_id) if cat_id else None
+                parent_category = cand if isinstance(cand, discord.CategoryChannel) else None
+            except Exception:
+                parent_category = None
 
-        ticket_channel = None
-        try:
-            ticket_channel = await guild.create_text_channel(
-                channel_name, overwrites=overwrites, category=parent_category,
-                reason=f"Ticket created by {interaction.user} for {self.category}",
-            )
-        except discord.Forbidden:
+            ticket_channel = None
             try:
                 ticket_channel = await guild.create_text_channel(
-                    channel_name, overwrites=overwrites,
-                    reason=f"Ticket created by {interaction.user} (no category access)",
+                    channel_name, overwrites=overwrites, category=parent_category,
+                    reason=f"Ticket created by {interaction.user} for {self.category}",
                 )
+            except discord.Forbidden:
+                try:
+                    ticket_channel = await guild.create_text_channel(
+                        channel_name, overwrites=overwrites,
+                        reason=f"Ticket created by {interaction.user} (no category access)",
+                    )
+                except Exception as e:
+                    await interaction.followup.send(f"Ticket creation failed: {e}. Please contact an admin.", ephemeral=True)
+                    return
             except Exception as e:
                 await interaction.followup.send(f"Ticket creation failed: {e}. Please contact an admin.", ephemeral=True)
                 return
+
+            embed = discord.Embed(
+                title=f"{self.category} Ticket #{number}",
+                description=f"Requestor: {interaction.user.mention}",
+                color=0x00FF00,
+            )
+            for ti in self.inputs:
+                embed.add_field(name=ti.label, value=ti.value or "—", inline=False)
+            for i in range(self.slots):
+                embed.add_field(name=f"Helper Slot {i+1}", value="Empty", inline=True)
+
+            view = TicketView(self.category, interaction.user.id)
+            msg = await ticket_channel.send(embed=embed, view=view)
+
+            active_tickets[ticket_channel.id] = {
+                "category": self.category,
+                "requestor": interaction.user.id,
+                "helpers": [None] * self.slots,
+                "embed_msg": msg,
+                "closed_once": False,
+            }
+
+            await interaction.followup.send(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
+
         except Exception as e:
-            await interaction.followup.send(f"Ticket creation failed: {e}. Please contact an admin.", ephemeral=True)
-            return
+            # Final safeguard to surface tracebacks instead of Discord's generic error
+            logger.exception("Error during ticket modal submit: %s", e)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "⚠️ Something went wrong while processing your ticket.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "⚠️ Something went wrong while processing your ticket.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                pass
 
-        embed = discord.Embed(
-            title=f"{self.category} Ticket #{number}",
-            description=f"Requestor: {interaction.user.mention}",
-            color=0x00FF00,
-        )
-        for ti in self.inputs:
-            embed.add_field(name=ti.label, value=ti.value or "—", inline=False)
-        for i in range(self.slots):
-            embed.add_field(name=f"Helper Slot {i+1}", value="Empty", inline=True)
-
-        view = TicketView(self.category, interaction.user.id)
-        msg = await ticket_channel.send(embed=embed, view=view)
-
-        active_tickets[ticket_channel.id] = {
-            "category": self.category,
-            "requestor": interaction.user.id,
-            "helpers": [None] * self.slots,
-            "embed_msg": msg,
-            "closed_once": False,
-        }
-
-        await interaction.followup.send(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
+    # Py-cord uses `callback` for modal submissions; keep compatibility by delegating
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            await self.on_submit(interaction)
+        except Exception as e:
+            logger.exception("Unhandled error in TicketModal.callback: %s", e)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send("⚠️ Unexpected error creating your ticket.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("⚠️ Unexpected error creating your ticket.", ephemeral=True)
+            except Exception:
+                pass
 
 # ---------- TICKET VIEW ----------
 class TicketView(View):

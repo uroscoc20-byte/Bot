@@ -70,12 +70,19 @@ class Database:
         await self.save_config("roles", roles_data)
 
     async def get_roles(self):
-        roles = await self.load_config("roles")
-        if not roles:
-            return {"admin": None, "staff": None, "helper": None, "restricted": []}
-        if "restricted" not in roles:
-            roles["restricted"] = []
-        return roles
+        roles = await self.load_config("roles") or {}
+        # Normalize types and ensure keys exist
+        admin = roles.get("admin")
+        staff = roles.get("staff")
+        helper = roles.get("helper")
+        restricted_raw = roles.get("restricted", []) or []
+        restricted: list[int] = []
+        for r in restricted_raw:
+            try:
+                restricted.append(int(r))
+            except Exception:
+                continue
+        return {"admin": admin, "staff": staff, "helper": helper, "restricted": restricted}
 
     # ---------- TRANSCRIPT ----------
     async def set_transcript_channel(self, channel_id):
@@ -83,7 +90,10 @@ class Database:
 
     async def get_transcript_channel(self):
         data = await self.load_config("transcript_channel")
-        return data["id"] if data else None
+        try:
+            return int((data or {}).get("id")) if data and data.get("id") is not None else None
+        except Exception:
+            return None
 
     # ---------- PANEL CONFIG / MAINTENANCE ----------
     async def set_panel_config(self, text: str = None, color: int = None):
@@ -95,21 +105,33 @@ class Database:
         await self.save_config("panel_config", current)
 
     async def get_panel_config(self):
-        return await self.load_config("panel_config") or {"text": "Ticket panel", "color": 0x7289DA}
+        cfg = await self.load_config("panel_config") or {}
+        text = cfg.get("text", "Ticket panel")
+        color = cfg.get("color", 0x7289DA)
+        try:
+            color = int(color)
+        except Exception:
+            color = 0x7289DA
+        return {"text": text, "color": color}
 
     async def set_maintenance(self, enabled: bool, message: str = None):
         await self.save_config("maintenance", {"enabled": enabled, "message": message or "Tickets are temporarily disabled."})
 
     async def get_maintenance(self):
-        return await self.load_config("maintenance") or {"enabled": False, "message": "Tickets are temporarily disabled."}
+        data = await self.load_config("maintenance") or {}
+        return {"enabled": bool(data.get("enabled", False)), "message": data.get("message", "Tickets are temporarily disabled.")}
 
     # ---------- PREFIX (custom text commands, optional) ----------
     async def set_prefix(self, prefix: str):
         await self.save_config("prefix", {"value": prefix})
 
     async def get_prefix(self):
-        data = await self.load_config("prefix")
-        return (data or {}).get("value", "!")
+        data = await self.load_config("prefix") or {}
+        value = data.get("value", "!")
+        try:
+            return str(value)
+        except Exception:
+            return "!"
 
     # ---------- TICKET CATEGORY ----------
     async def set_ticket_category(self, category_id: int):
@@ -117,7 +139,10 @@ class Database:
 
     async def get_ticket_category(self):
         data = await self.load_config("ticket_category")
-        return data["id"] if data else None
+        try:
+            return int((data or {}).get("id")) if data and data.get("id") is not None else None
+        except Exception:
+            return None
 
     # ---------- CATEGORIES ----------
     async def add_category(self, name, questions, points, slots):
