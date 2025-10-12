@@ -239,7 +239,7 @@ class TicketView(View):
         self.category = category
         self.requestor_id = requestor_id
         self.add_item(Button(label="Join Ticket", style=discord.ButtonStyle.green, custom_id="join_ticket"))
-        self.add_item(Button(label="Remove Helper", style=discord.ButtonStyle.red, custom_id="remove_helper"))
+        # Removed generic remove button; use /ticket_kick for explicit choice
         self.add_item(Button(label="Close Ticket", style=discord.ButtonStyle.gray, custom_id="close_ticket"))
 
 
