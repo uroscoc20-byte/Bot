@@ -32,6 +32,17 @@ class SetupModule(commands.Cog):
         await db.set_transcript_channel(channel.id)
         await ctx.respond(f"✅ Transcript channel set to {channel.mention}")
 
+    @commands.slash_command(name="setup_audit_channel", description="Set audit log channel (Admin only)")
+    async def setup_audit_channel(
+        self, ctx: discord.ApplicationContext,
+        channel: discord.Option(discord.TextChannel, "Select audit log channel")
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        await db.save_config("audit_channel", {"id": channel.id})
+        await ctx.respond(f"✅ Audit channel set to {channel.mention}")
+
     @commands.slash_command(name="setup_ticket_category", description="Set Discord category for tickets (Admin only)")
     async def setup_ticket_category(
         self,
