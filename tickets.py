@@ -35,22 +35,16 @@ def parse_question_required(label: str):
     cleaned = raw.strip("* ")
     if cleaned.lower().endswith("(required)"):
         cleaned = cleaned[: -len("(required)")].strip()
-    # Enforce Discord TextInput label length limit
     if len(cleaned) > 45:
         cleaned = cleaned[:45]
     return cleaned, required
 
 # ---------- STORAGE ----------
 active_tickets = {}
-
-# Use module-level logger for error visibility in hosting logs
 logger = logging.getLogger(__name__)
 
 # ---------- PERMISSIONS ----------
 def bot_can_manage_channels(interaction: discord.Interaction) -> bool:
-    """
-    Prefer interaction.app_permissions; fall back to guild.me.
-    """
     perms = getattr(interaction, "app_permissions", None)
     if perms is not None:
         return bool(getattr(perms, "administrator", False) or getattr(perms, "manage_channels", False))
@@ -94,7 +88,6 @@ async def generate_ticket_transcript(ticket_info, rewarded=False):
         ),
         inline=False,
     )
-
     if transcript_lines:
         snippet = "\n".join(transcript_lines[-30:])
         if len(snippet) > 1000:
@@ -125,7 +118,6 @@ class TicketModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
-        # Always try to defer quickly and ephemerally to avoid 3s timeouts
         try:
             await interaction.response.defer(ephemeral=True)
         except Exception:
@@ -188,7 +180,6 @@ class TicketModal(Modal):
             for i in range(self.slots):
                 embed.add_field(name=f"👤 Helper Slot {i+1}", value="Empty", inline=True)
 
-            # Mention helper role and set permissions
             roles_cfg = await db.get_roles()
             helper_role_id = roles_cfg.get("helper") if roles_cfg else None
             staff_role_id = roles_cfg.get("staff") if roles_cfg else None
@@ -197,7 +188,6 @@ class TicketModal(Modal):
             staff_role = guild.get_role(staff_role_id) if staff_role_id else None
             admin_role = guild.get_role(admin_role_id) if admin_role_id else None
 
-            # Ensure roles have proper access in this channel
             try:
                 if helper_role:
                     await ticket_channel.set_permissions(
@@ -337,8 +327,11 @@ class TicketSelect(Select):
             await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
             return
 
-        if not bot_can_manage_channels(interaction)):
-            await interaction.response.send_message("I need the 'Manage Channels' permission to create your ticket.", ephemeral=True)
+        if not bot_can_manage_channels(interaction):
+            await interaction.response.send_message(
+                "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
+                ephemeral=True,
+            )
             return
 
         category_name = self.values[0]
@@ -372,7 +365,10 @@ class TicketModule(commands.Cog):
             return
 
         if not ctx.guild.me.guild_permissions.manage_channels:
-            await ctx.respond("I need the 'Manage Channels' permission to create ticket channels.", ephemeral=True)
+            await ctx.respond(
+                "I need the 'Manage Channels' permission to create ticket channels. Please grant it and try again.",
+                ephemeral=True,
+            )
             return
 
         maintenance = await db.get_maintenance()
@@ -385,9 +381,9 @@ class TicketModule(commands.Cog):
             categories = [{
                 "name": name,
                 "questions": DEFAULT_QUESTIONS,
-                "points": pts,
+                "points": DEFAULT_POINT_VALUES[name],
                 "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
-            } for name, pts in DEFAULT_POINT_VALUES.items()]
+            } for name in DEFAULT_POINT_VALUES.keys()]
         panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
         embed = discord.Embed(
@@ -397,11 +393,20 @@ class TicketModule(commands.Cog):
         )
         services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
         embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
-        embed.add_field(name="ℹ️ How it works", value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!", inline=False)
+        embed.add_field(
+            name="ℹ️ How it works",
+            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
+            inline=False,
+        )
         await ctx.respond(embed=embed, view=view)
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
-    async def ticket_kick(self, ctx, user: discord.Member, from_channel: bool = False):
+    async def ticket_kick(
+        self,
+        ctx: discord.ApplicationContext,
+        user: discord.Option(discord.Member, "Member to remove from this ticket"),
+        from_channel: discord.Option(bool, "Also remove channel access?", required=False, default=False)
+    ):
         roles_cfg = await db.get_roles()
         staff_role_id = roles_cfg.get("staff")
         admin_role_id = roles_cfg.get("admin")
@@ -420,7 +425,6 @@ class TicketModule(commands.Cog):
             await ctx.respond("This channel is not a ticket.", ephemeral=True)
             return
 
-        # Update helpers list and embed
         changed = False
         for i in range(len(ticket_info["helpers"])):
             if ticket_info["helpers"][i] == user.id:

@@ -121,7 +121,7 @@ class Database:
         data = await self.load_config("maintenance") or {}
         return {"enabled": bool(data.get("enabled", False)), "message": data.get("message", "Tickets are temporarily disabled.")}
 
-    # ---------- PREFIX (custom text commands, optional) ----------
+    # ---------- PREFIX ----------
     async def set_prefix(self, prefix: str):
         await self.save_config("prefix", {"value": prefix})
 
