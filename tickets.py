@@ -200,7 +200,13 @@ class TicketModal(Modal):
 
             view = TicketView(self.category, interaction.user.id)
             mention_text = helper_role.mention if helper_role else ""
-            msg = await ticket_channel.send(content=mention_text, embed=embed, view=view)
+            allowed = None
+            if helper_role:
+                try:
+                    allowed = discord.AllowedMentions(roles=[helper_role])
+                except Exception:
+                    allowed = None
+            msg = await ticket_channel.send(content=mention_text, embed=embed, view=view, allowed_mentions=allowed)
             try:
                 await msg.pin(reason="Pin ticket for visibility")
             except Exception:
