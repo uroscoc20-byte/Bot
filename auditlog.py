@@ -1,36 +1,45 @@
 # audit_log.py
 import discord
 from discord.ext import commands
-from collections import deque
 from datetime import datetime
 from database import db
 
-def _flatten_options(options) -> list[str]:
+def build_command_path_and_args(data: dict) -> tuple[str, str]:
     """
-    Recursively flatten interaction 'options' (handles subcommands/groups).
-    Produces tokens like: group subcmd key=value ...
+    Build a human-readable path (/group subcmd ...) and a simple args string.
+    Handles subcommand groups and subcommands (type 2 and 1).
     """
-    if not options:
-        return []
-    tokens: list[str] = []
-    for opt in options:
-        opt_type = opt.get("type")
-        name = opt.get("name")
-        # 1 = SUB_COMMAND, 2 = SUB_COMMAND_GROUP
-        if opt_type in (1, 2):
-            if name:
-                tokens.append(str(name))
-            tokens.extend(_flatten_options(opt.get("options")))
-        else:
-            if name is not None:
-                value = opt.get("value")
-                tokens.append(f"{name}={value}")
-    return tokens
+    if not data:
+        return ("unknown", "no-args")
+
+    name = data.get("name", "unknown")
+    options = data.get("options") or []
+
+    path_parts = [name]
+    args_parts = []
+
+    def walk(opts):
+        for o in opts or []:
+            t = o.get("type")
+            n = o.get("name")
+            if t in (1, 2):  # SUB_COMMAND or SUB_COMMAND_GROUP
+                if n:
+                    path_parts.append(n)
+                walk(o.get("options"))
+            else:
+                if n is not None:
+                    v = o.get("value")
+                    args_parts.append(f"{n}={v}")
+
+    walk(options)
+
+    path = " ".join(path_parts) if path_parts else name
+    args = " ".join(args_parts) if args_parts else "no-args"
+    return (path, args)
 
 class AuditLogModule(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self._recent_interaction_ids: deque[int] = deque(maxlen=512)
 
     async def _get_audit_channel(self, guild: discord.Guild) -> discord.TextChannel | None:
         cfg = await db.load_config("audit_channel")
@@ -43,8 +52,8 @@ class AuditLogModule(commands.Cog):
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
         """
-        Logs ALL slash commands as soon as Discord delivers the interaction
-        (works for /panel, /points_add, etc., regardless of success).
+        Log ALL application command uses as soon as Discord delivers the interaction.
+        Posts a plain message so it works even without Embed Links permission.
         """
         try:
             if interaction.type != discord.InteractionType.application_command:
@@ -52,41 +61,26 @@ class AuditLogModule(commands.Cog):
             if not interaction.guild:
                 return
 
-            if interaction.id in self._recent_interaction_ids:
-                return
-            self._recent_interaction_ids.append(interaction.id)
-
-            ch = await self._get_audit_channel(interaction.guild)
-            if not ch:
+            audit_ch = await self._get_audit_channel(interaction.guild)
+            if not audit_ch:
                 return
 
             data = interaction.data or {}
-            cmd_name = data.get("name", "unknown")
-            tokens = _flatten_options(data.get("options"))
-            args_str = " ".join(tokens) if tokens else "no-args"
+            cmd_path, args = build_command_path_and_args(data)
 
             user = interaction.user
             channel = interaction.channel
-            embed = discord.Embed(
-                title="🛡️ Command Used",
-                description=f"`/{cmd_name}`",
-                color=0x2F3136,
-                timestamp=datetime.utcnow(),
+            utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            # Plain text log line for maximum reliability
+            msg = (
+                f"🛡️ [{utc_now}] /{cmd_path} by {user.mention} (ID {user.id}) "
+                f"in {channel.mention if hasattr(channel, 'mention') else 'DM/Unknown'} "
+                f"args: {args}"
             )
-            embed.add_field(name="User", value=f"{user.mention} (`{user.id}`)", inline=False)
-            if isinstance(channel, (discord.TextChannel, discord.Thread)):
-                embed.add_field(name="Channel", value=f"{channel.mention} (`{channel.id}`)", inline=False)
-            else:
-                embed.add_field(name="Channel", value="DM or unknown", inline=False)
-            embed.add_field(name="Args", value=args_str, inline=False)
-
-            path_tokens = [t for t in tokens if "=" not in t]
-            if path_tokens:
-                embed.set_footer(text=f"path: {cmd_name} {' '.join(path_tokens)}")
-
-            await ch.send(embed=embed)
+            await audit_ch.send(msg)
         except Exception:
+            # Never break the user flow due to audit failures
             pass
 
 def setup(bot: commands.Bot):
-    bot.add_cog(AuditLogModule(bot))
