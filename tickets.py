@@ -34,10 +34,27 @@ def parse_question_required(label: str):
     cleaned = raw.strip("* ")
     if cleaned.lower().endswith("(required)"):
         cleaned = cleaned[: -len("(required)")].strip()
+    # Enforce Discord TextInput label length limit
+    if len(cleaned) > 45:
+        cleaned = cleaned[:45]
     return cleaned, required
 
 # ---------- STORAGE ----------
 active_tickets = {}
+
+# ---------- PERMISSIONS ----------
+def bot_can_manage_channels(interaction: discord.Interaction) -> bool:
+    """
+    Prefer interaction.app_permissions; fall back to guild.me.
+    """
+    perms = getattr(interaction, "app_permissions", None)
+    if perms is not None:
+        return bool(getattr(perms, "administrator", False) or getattr(perms, "manage_channels", False))
+    me = interaction.guild.me if interaction.guild else None
+    if not me or not getattr(me, "guild_permissions", None):
+        return False
+    gp = me.guild_permissions
+    return bool(getattr(gp, "administrator", False) or getattr(gp, "manage_channels", False))
 
 # ---------- UTILITY ----------
 async def generate_ticket_transcript(ticket_info, rewarded=False):
@@ -66,7 +83,7 @@ class TicketModal(Modal):
         self.requestor_id = requestor_id
         self.slots = slots
         self.inputs = []
-        for q in questions:
+        for q in (questions or [])[:5]:
             label, required = parse_question_required(q)
             ti = InputText(label=label, style=discord.InputTextStyle.long, required=required)
             self.add_item(ti)
@@ -79,7 +96,7 @@ class TicketModal(Modal):
         except Exception:
             pass
 
-        if not guild.me.guild_permissions.manage_channels:
+        if not bot_can_manage_channels(interaction):
             await interaction.followup.send(
                 "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
                 ephemeral=True,
@@ -177,7 +194,7 @@ class TicketSelect(Select):
             await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
             return
 
-        if not interaction.guild.me.guild_permissions.manage_channels:
+        if not bot_can_manage_channels(interaction):
             await interaction.response.send_message(
                 "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
                 ephemeral=True,
