@@ -495,6 +495,13 @@ class TicketModule(commands.Cog):
             if any(rid in member_role_ids for rid in restricted_ids):
                 await interaction.response.send_message("You cannot join this ticket.", ephemeral=True)
                 return
+            # Prevent duplicate joins and enforce capacity
+            if interaction.user.id in [h for h in ticket_info["helpers"] if h]:
+                await interaction.response.send_message("You are already listed as a helper on this ticket.", ephemeral=True)
+                return
+            if all(h is not None for h in ticket_info["helpers"]):
+                await interaction.response.send_message("This ticket is full. No helper slots left.", ephemeral=True)
+                return
             for i in range(len(ticket_info["helpers"])):
                 if ticket_info["helpers"][i] is None:
                     ticket_info["helpers"][i] = interaction.user.id

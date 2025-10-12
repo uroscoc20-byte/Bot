@@ -142,7 +142,8 @@ class CustomCommandsModule(commands.Cog):
                 "`/setup_panel` — Customize panel text/color\n"
                 "`/setup_maintenance` — Toggle ticket availability\n"
                 "`/setup_category_add|remove|list` — Manage categories\n"
-                "`/custom_add|custom_remove|custom_list` — Manage custom slash commands"
+                "`/custom_add|custom_remove|custom_list` — Manage custom slash commands\n"
+                "`/setup_audit_channel` — Set audit log channel (admin)"
             ),
             inline=False,
         )
