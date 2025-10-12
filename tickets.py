@@ -477,7 +477,7 @@ class TicketModule(commands.Cog):
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
-                # 1st close: remove helpers from channel and clear fields
+                # 1st close: only remove helpers' channel access; keep embed and helpers list
                 helpers = [h for h in ticket_info["helpers"] if h]
                 for uid in helpers:
                     member = interaction.guild.get_member(uid)
@@ -486,14 +486,8 @@ class TicketModule(commands.Cog):
                             await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
                     except Exception:
                         pass
-                embed = ticket_info["embed_msg"].embeds[0]
-                base_index = len(embed.fields) - len(ticket_info["helpers"])
-                for i in range(len(ticket_info["helpers"])):
-                    embed.set_field_at(base_index + i, name=f"Helper Slot {i+1}", value="Empty", inline=True)
-                await ticket_info["embed_msg"].edit(embed=embed)
-                ticket_info["helpers"] = [None for _ in ticket_info["helpers"]]
                 ticket_info["closed_stage"] = 1
-                await interaction.response.send_message("Ticket closed. Choose reward on next click.", ephemeral=True)
+                await interaction.response.send_message("Helpers removed from channel. Click again to choose reward.", ephemeral=True)
             elif stage == 1:
                 # 2nd close: prompt reward/no reward
                 view = RewardChoiceView(interaction.channel.id)
