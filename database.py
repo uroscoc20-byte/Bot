@@ -125,7 +125,15 @@ class Database:
 
     async def get_ticket_category(self):
         data = await self.load_config("ticket_category")
-        return data["id"] if data else None
+        if not data:
+            return None
+        cat_id = data.get("id")
+        if cat_id is None:
+            return None
+        try:
+            return int(cat_id)
+        except Exception:
+            return None
 
     # ---------- CATEGORIES ----------
     async def add_category(self, name, questions, points, slots):

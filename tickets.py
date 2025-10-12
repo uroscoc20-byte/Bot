@@ -85,26 +85,82 @@ class TicketModal(Modal):
             self.inputs.append(ti)
 
     async def on_submit(self, interaction: discord.Interaction):
+        # Ensure we respond quickly to avoid timeouts
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+
         guild = interaction.guild
-        # Persisted counter via DB to avoid resets on restarts
-        number = await db.increment_ticket_number(self.category)
+        # Permission precheck for clearer errors
+        if not guild.me.guild_permissions.manage_channels:
+            await interaction.followup.send(
+                "I need the 'Manage Channels' permission to create your ticket.",
+                ephemeral=True,
+            )
+            return
+
+        # Persisted counter via DB with safety
+        try:
+            number = await db.increment_ticket_number(self.category)
+        except Exception as e:
+            print("[TicketModal] increment_ticket_number failed:", e)
+            number = 1
+
         channel_name = f"{self.category.lower().replace(' ', '-')}-{number}"
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
-        parent_category_id = await db.get_ticket_category()
-        parent_category = guild.get_channel(parent_category_id) if parent_category_id else None
-        ticket_channel = await guild.create_text_channel(channel_name, overwrites=overwrites, category=parent_category)
+
+        # Safe parent category resolution
+        parent_category = None
+        try:
+            parent_category_id = await db.get_ticket_category()
+            print("[TicketModal] parent category id:", parent_category_id)
+            candidate = guild.get_channel(parent_category_id) if parent_category_id else None
+            if isinstance(candidate, discord.CategoryChannel):
+                parent_category = candidate
+        except Exception as e:
+            print("[TicketModal] get_ticket_category failed:", e)
+            parent_category = None
+
+        # Create channel with fallback when category creation fails
+        try:
+            ticket_channel = await guild.create_text_channel(
+                channel_name,
+                overwrites=overwrites,
+                category=parent_category,
+                reason=f"Ticket created by {interaction.user} for {self.category}",
+            )
+        except discord.Forbidden as e:
+            print("[TicketModal] create_text_channel forbidden at category, falling back to root:", e)
+            try:
+                ticket_channel = await guild.create_text_channel(
+                    channel_name,
+                    overwrites=overwrites,
+                    reason=f"Ticket created by {interaction.user} (no category access)",
+                )
+            except Exception as e2:
+                print("[TicketModal] root create failed:", e2)
+                await interaction.followup.send(
+                    "I cannot create channels here (check my role position & category perms).",
+                    ephemeral=True,
+                )
+                return
+        except Exception as e:
+            print("[TicketModal] create_text_channel error:", e)
+            await interaction.followup.send(f"Ticket creation failed: {e}", ephemeral=True)
+            return
 
         embed = discord.Embed(
             title=f"{self.category} Ticket #{number}",
             description=f"Requestor: {interaction.user.mention}",
-            color=0x00FF00
+            color=0x00FF00,
         )
         for ti in self.inputs:
-            embed.add_field(name=ti.label, value=ti.value, inline=False)
+            embed.add_field(name=ti.label, value=(ti.value or "—"), inline=False)
 
         for i in range(self.slots):
             embed.add_field(name=f"Helper Slot {i+1}", value="Empty", inline=True)
@@ -115,12 +171,12 @@ class TicketModal(Modal):
         active_tickets[ticket_channel.id] = {
             "category": self.category,
             "requestor": interaction.user.id,
-            "helpers": [None]*self.slots,
+            "helpers": [None] * self.slots,
             "embed_msg": msg,
-            "closed_once": False
+            "closed_once": False,
         }
 
-        await interaction.response.send_message(f"Ticket created: {ticket_channel.mention}", ephemeral=True)
+        await interaction.followup.send(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
 
 # ---------- TICKET VIEW ----------
 class TicketView(View):
