@@ -197,19 +197,37 @@ class TicketModal(Modal):
             staff_role = guild.get_role(staff_role_id) if staff_role_id else None
             admin_role = guild.get_role(admin_role_id) if admin_role_id else None
 
-            if helper_role:
-                overwrites[helper_role] = discord.PermissionOverwrite(
-                    view_channel=True, send_messages=False, read_message_history=True
-                )
-            # Ensure staff/admin roles can access and help
-            if staff_role:
-                overwrites[staff_role] = discord.PermissionOverwrite(
-                    view_channel=True, send_messages=True, read_message_history=True
-                )
-            if admin_role:
-                overwrites[admin_role] = discord.PermissionOverwrite(
-                    view_channel=True, send_messages=True, read_message_history=True
-                )
+            # Ensure roles have proper access in this channel
+            try:
+                if helper_role:
+                    await ticket_channel.set_permissions(
+                        helper_role,
+                        view_channel=True,
+                        send_messages=True,
+                        read_message_history=True,
+                        attach_files=True,
+                    )
+                if staff_role:
+                    await ticket_channel.set_permissions(
+                        staff_role,
+                        view_channel=True,
+                        send_messages=True,
+                        read_message_history=True,
+                        manage_messages=True,
+                        attach_files=True,
+                    )
+                if admin_role:
+                    await ticket_channel.set_permissions(
+                        admin_role,
+                        view_channel=True,
+                        send_messages=True,
+                        read_message_history=True,
+                        manage_messages=True,
+                        manage_channels=True,
+                        attach_files=True,
+                    )
+            except Exception:
+                pass
 
             view = TicketView(self.category, interaction.user.id)
             mention_text = helper_role.mention if helper_role else ""

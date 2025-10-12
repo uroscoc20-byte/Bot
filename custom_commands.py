@@ -98,13 +98,14 @@ class CustomCommandsModule(commands.Cog):
     async def info(self, ctx: discord.ApplicationContext):
         embed = discord.Embed(
             title="✨ Bot Commands & Help",
-            description="Welcome! Here are all the commands you can use.",
+            description="All available commands grouped by feature.",
             color=0x5865F2,
         )
         embed.add_field(
             name="🎫 Ticket Commands",
             value=(
                 "`/panel` — Post ticket panel (admin/staff)\n"
+                "`/ticket_kick @user [Also remove channel access?]` — Remove from embed, optional channel\n"
                 "`/setup_ticket_category` — Set parent category for tickets (admin)"
             ),
             inline=False,
@@ -126,7 +127,10 @@ class CustomCommandsModule(commands.Cog):
         embed.add_field(name="🎮 Service Types & Points", value=services, inline=False)
         embed.add_field(
             name="🧰 Utility",
-            value="`/talk` — Send a message/embed/file to a channel or thread (admin)",
+            value=(
+                "`/talk` — Send a message/embed/file to a channel or thread (admin)\n"
+                "Custom commands you add (e.g., `/hello`)"
+            ),
             inline=False,
         )
         embed.add_field(
@@ -137,13 +141,9 @@ class CustomCommandsModule(commands.Cog):
                 "`/setup_transcript` — Set transcript channel\n"
                 "`/setup_panel` — Customize panel text/color\n"
                 "`/setup_maintenance` — Toggle ticket availability\n"
-                "`/setup_category_add|remove|list` — Manage categories"
+                "`/setup_category_add|remove|list` — Manage categories\n"
+                "`/custom_add|custom_remove|custom_list` — Manage custom slash commands"
             ),
-            inline=False,
-        )
-        embed.add_field(
-            name="📜 Guidelines",
-            value="See your guidelines channel for ticket rules.",
             inline=False,
         )
         await ctx.respond(embed=embed)
