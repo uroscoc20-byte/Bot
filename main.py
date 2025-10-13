@@ -34,10 +34,10 @@ initial_extensions = [
     "setup",
     "tickets",
     "points",
-    "custom_commands",
-    "verification",  # NEW
-    "bot_speak",     # optional
-    "audit_log",     # audit logging module
+    "custom_simple",  # NEW: simple prefix-based custom commands
+    "verification",   # NEW: verification panel/tickets
+    "bot_speak",      # optional
+    "audit_log",      # plain-text audit logging
 ]
 
 # ---------- ASYNC MAIN ----------

@@ -1,155 +1,103 @@
-# custom_commands.py
+# custom_simple.py
 import re
 import discord
 from discord.ext import commands
 from database import db
 
+PREFIX = "!"
 SAFE_NAME_RE = re.compile(r"[^a-z0-9_-]")
 
-def sanitize_command_name(name: str) -> str:
+def sanitize(name: str) -> str:
     s = (name or "").strip().lower().replace(" ", "_")
     s = SAFE_NAME_RE.sub("", s)[:32]
-    return s or "cmd"
+    return s
 
-class CustomCommandsModule(commands.Cog):
+class CustomSimpleCreateModal(discord.ui.Modal):
+    def __init__(self, cog: "CustomSimpleModule"):
+        super().__init__(title="Create Custom (!) Command")
+        self.cog = cog
+        self.trigger = discord.ui.InputText(label="Trigger (without !, e.g. hello)", required=True, max_length=32)
+        self.text = discord.ui.InputText(label="Response text", style=discord.InputTextStyle.long, required=True)
+        self.image = discord.ui.InputText(label="Image URL (optional)", required=False)
+        self.add_item(self.trigger)
+        self.add_item(self.text)
+        self.add_item(self.image)
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            trig = sanitize(self.trigger.value)
+            if not trig:
+                await interaction.response.send_message("Invalid trigger. Use letters, numbers, '-' or '_'.", ephemeral=True)
+                return
+            text = self.text.value
+            image = (self.image.value or "").strip() or None
+
+            await db.add_custom_command(trig, text, image)
+            self.cog.cache[trig] = {"text": text, "image": image}
+
+            await interaction.response.send_message(f"✅ Custom command `!{trig}` created.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to create command: {e}", ephemeral=True)
+
+class CustomSimpleModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Map sanitized_name -> {"text": str, "image": str|None, "display": original}
-        self.custom_commands: dict[str, dict] = {}
+        self.cache: dict[str, dict] = {}
 
-    async def _register_for_guild(self, guild: discord.Guild, name: str):
-        if not guild:
-            return
-        if self.bot.tree.get_command(name, guild=guild):
-            return
-        self.bot.tree.add_command(
-            discord.app_commands.Command(
-                name=name,
-                description=f"Custom command: {name}",
-                callback=self._dynamic_command_callback(name),
-            ),
-            guild=guild,
-        )
-        try:
-            await self.bot.tree.sync(guild=guild)
-        except Exception:
-            pass
-
-    def _dynamic_command_callback(self, sanitized_name: str):
-        async def cb(interaction: discord.Interaction):
-            data = self.custom_commands.get(sanitized_name)
-            if not data:
-                await interaction.response.send_message("Command not found.", ephemeral=True)
-                return
-            embed = discord.Embed(title=data.get("display") or sanitized_name, description=data["text"], color=0xFFD700)
-            if data.get("image"):
-                embed.set_image(url=data["image"])
-            await interaction.response.send_message(embed=embed)
-        return cb
-
-    async def load_commands(self):
+    async def load_cache(self):
         rows = await db.get_custom_commands()
-        # Normalize into sanitized map
-        self.custom_commands.clear()
-        for r in rows:
-            raw_name = r["name"]
-            sname = sanitize_command_name(raw_name)
-            self.custom_commands[sname] = {"text": r["text"], "image": r["image"], "display": raw_name}
+        self.cache = {r["name"]: {"text": r["text"], "image": r["image"]} for r in rows}
 
     @commands.Cog.listener()
     async def on_ready(self):
-        await self.load_commands()
-        # Register for all guilds for instant availability
-        for guild in self.bot.guilds:
-            for sname in self.custom_commands.keys():
-                await self._register_for_guild(guild, sname)
+        await self.load_cache()
 
     @commands.Cog.listener()
-    async def on_guild_join(self, guild: discord.Guild):
-        # Register existing commands in newly joined guilds
-        for sname in self.custom_commands.keys():
-            await self._register_for_guild(guild, sname)
-
-    @commands.slash_command(name="custom_add", description="Add a custom command (Admin only)")
-    async def custom_add(
-        self,
-        ctx: discord.ApplicationContext,
-        name: discord.Option(str, "Command name (letters, numbers, - or _)"),
-        text: discord.Option(str, "Text to display"),
-        image: discord.Option(str, "Optional image URL", required=False),
-    ):
-        if not ctx.user.guild_permissions.administrator:
-            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
             return
-
-        sname = sanitize_command_name(name)
-        if not sname:
-            await ctx.respond("Invalid command name. Use letters, numbers, '-' or '_'.", ephemeral=True)
+        content = message.content.strip()
+        if not content.startswith(PREFIX):
             return
-
-        # Persist to DB
-        await db.add_custom_command(sname, text, image)
-        # Update in-memory
-        self.custom_commands[sname] = {"text": text, "image": image, "display": name}
-
-        # Register in current guild instantly
-        await self._register_for_guild(ctx.guild, sname)
-
-        await ctx.respond(f"✅ Custom command `/{sname}` added.", ephemeral=True)
-
-    @commands.slash_command(name="custom_remove", description="Remove a custom command (Admin only)")
-    async def custom_remove(self, ctx: discord.ApplicationContext, name: discord.Option(str, "Command name")):
-        if not ctx.user.guild_permissions.administrator:
-            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+        trig = sanitize(content.split()[0][len(PREFIX):])
+        if not trig:
             return
-
-        sname = sanitize_command_name(name)
-        if sname not in self.custom_commands:
-            await ctx.respond(f"⚠ Custom command `/{sname}` does not exist.", ephemeral=True)
+        data = self.cache.get(trig)
+        if not data:
             return
+        embed = discord.Embed(title=f"{PREFIX}{trig}", description=data["text"], color=0xFFD700)
+        if data.get("image"):
+            embed.set_image(url=data["image"])
+        try:
+            await message.channel.send(embed=embed)
+        except Exception:
+            # fallback to text
+            await message.channel.send(data["text"])
 
-        # Remove from cache and DB
-        self.custom_commands.pop(sname, None)
-        await db.remove_custom_command(sname)
+    @commands.slash_command(name="custom_simple_create", description="Open modal to create a (!) custom command")
+    async def custom_simple_create(self, ctx: discord.ApplicationContext):
+        await ctx.interaction.response.send_modal(CustomSimpleCreateModal(self))
 
-        # Remove from this guild's tree
-        if self.bot.tree.get_command(sname, guild=ctx.guild):
-            self.bot.tree.remove_command(sname, guild=ctx.guild)
-            try:
-                await self.bot.tree.sync(guild=ctx.guild)
-            except Exception:
-                pass
-
-        await ctx.respond(f"✅ Custom command `/{sname}` removed.", ephemeral=True)
-
-    @commands.slash_command(name="custom_list", description="List all custom commands")
-    async def custom_list(self, ctx: discord.ApplicationContext, page: discord.Option(int, "Page", required=False, default=1)):
-        cmds = sorted(self.custom_commands.items(), key=lambda kv: kv[0])
+    @commands.slash_command(name="custom_simple_list", description="List all (!) custom commands")
+    async def custom_simple_list(self, ctx: discord.ApplicationContext, page: discord.Option(int, "Page", required=False, default=1)):
+        cmds = sorted(self.cache.items(), key=lambda kv: kv[0])
         if not cmds:
-            await ctx.respond("No custom commands configured.")
+            await ctx.respond("No custom (!) commands configured.")
             return
 
         per_page = 15
         total_pages = max(1, (len(cmds) + per_page - 1) // per_page)
         page = max(1, min(page, total_pages))
         start = (page - 1) * per_page
-        end = start + per_page
-        slice_cmds = cmds[start:end]
+        lines = [f"`{PREFIX}{name}`" for name, _ in cmds[start:start+per_page]]
 
-        lines = []
-        for sname, data in slice_cmds:
-            display = data.get("display") or sname
-            lines.append(f"/{sname} — {display}")
-
-        embed = discord.Embed(title="Custom Commands", color=0xAA00FF, description="\n".join(lines))
+        embed = discord.Embed(
+            title="✨ Custom (!) Commands",
+            description="\n".join(lines),
+            color=0xAA00FF
+        )
         embed.set_footer(text=f"Page {page}/{total_pages}")
         await ctx.respond(embed=embed)
 
-    # Backward-compatible dynamic handler if commands were added before this refactor:
-    def _legacy_dynamic_callback(self, interaction: discord.Interaction):
-        sname = (interaction.data or {}).get("name")
-        data = self.custom_commands.get(sname)
-        return data
-
 def setup(bot):
-    bot.add_cog(CustomCommandsModule(bot))
+    bot.add_cog(CustomSimpleModule(bot))
