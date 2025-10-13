@@ -1,45 +1,43 @@
 # audit_log.py
 import discord
 from discord.ext import commands
+from collections import deque
 from datetime import datetime
 from database import db
 
-def build_command_path_and_args(data: dict) -> tuple[str, str]:
-    """
-    Build a human-readable path (/group subcmd ...) and a simple args string.
-    Handles subcommand groups and subcommands (type 2 and 1).
-    """
+def _flatten_options(options) -> list[str]:
+    if not options:
+        return []
+    tokens: list[str] = []
+    for opt in options:
+        t = opt.get("type")
+        n = opt.get("name")
+        if t in (1, 2):
+            if n:
+                tokens.append(str(n))
+            tokens.extend(_flatten_options(opt.get("options")))
+        else:
+            if n is not None:
+                v = opt.get("value")
+                tokens.append(f"{n}={v}")
+    return tokens
+
+def _build_path_and_args(data: dict) -> tuple[str, str]:
     if not data:
         return ("unknown", "no-args")
-
     name = data.get("name", "unknown")
     options = data.get("options") or []
-
-    path_parts = [name]
-    args_parts = []
-
-    def walk(opts):
-        for o in opts or []:
-            t = o.get("type")
-            n = o.get("name")
-            if t in (1, 2):  # SUB_COMMAND or SUB_COMMAND_GROUP
-                if n:
-                    path_parts.append(n)
-                walk(o.get("options"))
-            else:
-                if n is not None:
-                    v = o.get("value")
-                    args_parts.append(f"{n}={v}")
-
-    walk(options)
-
-    path = " ".join(path_parts) if path_parts else name
-    args = " ".join(args_parts) if args_parts else "no-args"
-    return (path, args)
+    tokens = _flatten_options(options)
+    path_tokens = [name] + [t for t in tokens if "=" not in t]
+    args_tokens = [t for t in tokens if "=" in t]
+    path = " ".join(path_tokens) if path_tokens else name
+    args = " ".join(args_tokens) if args_tokens else "no-args"
+    return path, args
 
 class AuditLogModule(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._recent: deque[int] = deque(maxlen=1024)
 
     async def _get_audit_channel(self, guild: discord.Guild) -> discord.TextChannel | None:
         cfg = await db.load_config("audit_channel")
@@ -51,36 +49,38 @@ class AuditLogModule(commands.Cog):
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
-        """
-        Log ALL application command uses as soon as Discord delivers the interaction.
-        Posts a plain message so it works even without Embed Links permission.
-        """
         try:
             if interaction.type != discord.InteractionType.application_command:
                 return
             if not interaction.guild:
                 return
-
-            audit_ch = await self._get_audit_channel(interaction.guild)
-            if not audit_ch:
+            if interaction.id in self._recent:
                 return
+            self._recent.append(interaction.id)
 
             data = interaction.data or {}
-            cmd_path, args = build_command_path_and_args(data)
+            path, args = _build_path_and_args(data)
 
-            user = interaction.user
-            channel = interaction.channel
+            target = await self._get_audit_channel(interaction.guild)
+            if target is None:
+                target = interaction.channel
+            if target is None:
+                return
+
             utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            ch_label = target.mention if hasattr(target, "mention") else "DM/Unknown"
+            msg = f"🛡️ [{utc_now}] /{path} by {interaction.user.mention} (ID {interaction.user.id}) in {ch_label} args: {args}"
 
-            # Plain text log line for maximum reliability
-            msg = (
-                f"🛡️ [{utc_now}] /{cmd_path} by {user.mention} (ID {user.id}) "
-                f"in {channel.mention if hasattr(channel, 'mention') else 'DM/Unknown'} "
-                f"args: {args}"
-            )
-            await audit_ch.send(msg)
+            try:
+                await target.send(msg)
+            except discord.Forbidden:
+                if interaction.channel and interaction.channel != target:
+                    try:
+                        await interaction.channel.send(msg)
+                    except Exception:
+                        pass
         except Exception:
-            # Never break the user flow due to audit failures
             pass
 
 def setup(bot: commands.Bot):
+    bot.add_cog(AuditLogModule(bot))
