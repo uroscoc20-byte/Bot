@@ -129,7 +129,9 @@ class CustomCommandsModule(commands.Cog):
             name="🧰 Utility",
             value=(
                 "`/talk` — Send a message/embed/file to a channel or thread (admin)\n"
-                "Custom commands you add (e.g., `/hello`)"
+                "Custom slash: commands you add (e.g., `/hello`)\n"
+                "Custom (!) text: use `/custom_simple_create` and trigger with `!name`\n"
+                "List (!) commands: `/custom_simple_list` (set prefix via `/setup_prefix`)"
             ),
             inline=False,
         )

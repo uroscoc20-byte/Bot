@@ -546,6 +546,15 @@ class TicketModule(commands.Cog):
                 roles_cfg = await db.get_roles()
                 staff_role_id = roles_cfg.get("staff") if roles_cfg else None
                 admin_role_id = roles_cfg.get("admin") if roles_cfg else None
+                # Revoke helper role visibility so generic helper role cannot see the channel
+                try:
+                    helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+                    if helper_role_id:
+                        helper_role = interaction.guild.get_role(helper_role_id)
+                        if helper_role:
+                            await interaction.channel.set_permissions(helper_role, view_channel=False, send_messages=False)
+                except Exception:
+                    pass
                 for uid in helpers:
                     member = interaction.guild.get_member(uid)
                     try:
