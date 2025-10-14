@@ -75,6 +75,12 @@ class CustomSimpleModule(commands.Cog):
         # Only keep allowed triggers
         self.cache = {k: v for k, v in raw.items() if k in ALLOWED_TRIGGERS}
 
+    def get_content(self, name: str) -> dict | None:
+        name = sanitize(name)
+        if name not in ALLOWED_TRIGGERS:
+            return None
+        return self.cache.get(name) or self.defaults.get(name)
+
     @commands.Cog.listener()
     async def on_ready(self):
         await self.load_cache()
@@ -91,7 +97,7 @@ class CustomSimpleModule(commands.Cog):
         trig = sanitize(trig_raw)
         if not trig or trig not in ALLOWED_TRIGGERS:
             return
-        data = self.cache.get(trig) or self.defaults.get(trig)
+        data = self.get_content(trig)
         if not data:
             return
         embed = discord.Embed(title=f"{prefix}{trig}", description=data.get("text") or "", color=0xFFD700)
@@ -115,6 +121,48 @@ class CustomSimpleModule(commands.Cog):
         await ctx.interaction.response.send_modal(
             CustomTextEditModal(self, name, (current or {}).get("text"), (current or {}).get("image"))
         )
+
+    @commands.slash_command(name="custom_edit", description="Edit !proof / !rrules / !hrules content")
+    async def custom_edit(
+        self,
+        ctx: discord.ApplicationContext,
+        name: discord.Option(str, "Which command", choices=["proof", "rrules", "hrules"]),
+    ):
+        # alias to custom_text_edit
+        await self.custom_text_edit.callback(self, ctx, name)  # type: ignore
+
+    @commands.slash_command(name="proof", description="Send the configured proof message")
+    async def proof_cmd(self, ctx: discord.ApplicationContext):
+        data = self.get_content("proof")
+        if not data:
+            await ctx.respond("Not configured.", ephemeral=True)
+            return
+        embed = discord.Embed(title="!proof", description=data.get("text") or "", color=0xFFD700)
+        if data.get("image"):
+            embed.set_image(url=data["image"])
+        await ctx.respond(embed=embed)
+
+    @commands.slash_command(name="rrules", description="Send the configured runner rules")
+    async def rrules_cmd(self, ctx: discord.ApplicationContext):
+        data = self.get_content("rrules")
+        if not data:
+            await ctx.respond("Not configured.", ephemeral=True)
+            return
+        embed = discord.Embed(title="!rrules", description=data.get("text") or "", color=0xFFD700)
+        if data.get("image"):
+            embed.set_image(url=data["image"])
+        await ctx.respond(embed=embed)
+
+    @commands.slash_command(name="hrules", description="Send the configured helper rules")
+    async def hrules_cmd(self, ctx: discord.ApplicationContext):
+        data = self.get_content("hrules")
+        if not data:
+            await ctx.respond("Not configured.", ephemeral=True)
+            return
+        embed = discord.Embed(title="!hrules", description=data.get("text") or "", color=0xFFD700)
+        if data.get("image"):
+            embed.set_image(url=data["image"])
+        await ctx.respond(embed=embed)
 
 
 def setup(bot):
