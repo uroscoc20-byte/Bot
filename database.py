@@ -1,14 +1,35 @@
 import aiosqlite
 import json
+import os
+from pathlib import Path
+import shutil
 
-DB_FILE = "bot_data.db"
+DEFAULT_DB_FILE = "bot_data.db"
+DB_FILE = os.getenv("DB_FILE", DEFAULT_DB_FILE)
 
 class Database:
     def __init__(self):
         self.db = None
 
     async def init(self):
+        # Ensure parent directory exists when using a custom DB path
+        try:
+            db_path = Path(DB_FILE)
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            # One-time migration: if switching to a new DB_FILE and old default exists, copy it
+            if DB_FILE != DEFAULT_DB_FILE:
+                src = Path(DEFAULT_DB_FILE)
+                if src.exists() and not db_path.exists():
+                    shutil.copy2(src, db_path)
+        except Exception:
+            pass
+
+        # Connect and log absolute DB location
         self.db = await aiosqlite.connect(DB_FILE)
+        try:
+            print(f"Using SQLite at: {Path(DB_FILE).resolve()}")
+        except Exception:
+            pass
         await self.create_tables()
 
     async def create_tables(self):
