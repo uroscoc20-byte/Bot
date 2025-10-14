@@ -1,4 +1,3 @@
-# audit_log.py
 import discord
 from discord.ext import commands
 from collections import deque
@@ -41,10 +40,10 @@ class AuditLogModule(commands.Cog):
 
     async def _get_audit_channel(self, guild: discord.Guild) -> discord.TextChannel | None:
         cfg = await db.load_config("audit_channel")
-        channel_id = (cfg or {}).get("id")
-        if not channel_id:
+        ch_id = (cfg or {}).get("id")
+        if not ch_id:
             return None
-        ch = guild.get_channel(int(channel_id))
+        ch = guild.get_channel(int(ch_id))
         return ch if isinstance(ch, discord.TextChannel) else None
 
     @commands.Cog.listener()
@@ -92,7 +91,9 @@ class AuditLogModule(commands.Cog):
             if not target:
                 return
             utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-            await target.send(f"🛡️ [{utc_now}] {prefix}{trigger} by {message.author.mention} (ID {message.author.id}) in {message.channel.mention}")
+            await target.send(
+                f"🛡️ [{utc_now}] {prefix}{trigger} by {message.author.mention} (ID {message.author.id}) in {message.channel.mention}"
+            )
         except Exception:
             pass
 
