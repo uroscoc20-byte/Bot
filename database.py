@@ -8,35 +8,28 @@ import asyncio
 DEFAULT_DB_FILE = "bot_data.db"
 DB_FILE = os.getenv("DB_FILE", DEFAULT_DB_FILE)
 
-# Firebase optional imports are done lazily in init()
 firebase_admin = None
 firestore = None
 
 
 class Database:
     def __init__(self):
-        self.db = None               # SQLite handle (async)
-        self.fs = None               # Firestore client (sync)
-        self.backend = "sqlite"      # or "firestore"
+        self.db = None
+        self.fs = None
+        self.backend = "sqlite"
 
     async def init(self):
-        # Try to initialize Firebase if credentials are provided
         await self._maybe_init_firebase()
-
         if self.fs:
             self.backend = "firestore"
             print("Using Firestore for persistence")
-            # No tables to create
             return
-
-        # Fallback: ensure SQLite path and connect
         await self._ensure_sqlite_connected()
 
     async def _ensure_sqlite_connected(self):
         try:
             db_path = Path(DB_FILE)
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            # One-time migration: if switching to a new DB_FILE and old default exists, copy it
             if DB_FILE != DEFAULT_DB_FILE:
                 src = Path(DEFAULT_DB_FILE)
                 if src.exists() and not db_path.exists():
@@ -61,17 +54,13 @@ class Database:
         global firebase_admin, firestore
         creds_json_str = os.getenv("FIREBASE_CREDENTIALS")
         creds_file = os.getenv("FIREBASE_CREDENTIALS_FILE")
-
         if not creds_json_str and not creds_file:
             return
-
         try:
             import firebase_admin as _fa
             from firebase_admin import credentials, firestore as _fs
-
             firebase_admin = _fa
             firestore = _fs
-
             if not firebase_admin._apps:
                 if creds_json_str:
                     data = json.loads(creds_json_str)
@@ -79,7 +68,6 @@ class Database:
                 else:
                     cred = credentials.Certificate(creds_file)
                 firebase_admin.initialize_app(cred)
-
             self.fs = firestore.client()
         except Exception as e:
             print(f"⚠️ Firebase init failed, falling back to SQLite: {e}")
@@ -135,19 +123,13 @@ class Database:
         """)
         await self.db.commit()
 
-    # ---------- helper: run Firestore operations in a thread ----------
     async def _fs_run(self, func):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, func)
 
     # ---------- ROLES ----------
     async def set_roles(self, admin, staff, helper, restricted_ids):
-        roles_data = {
-            "admin": admin,
-            "staff": staff,
-            "helper": helper,
-            "restricted": restricted_ids
-        }
+        roles_data = {"admin": admin, "staff": staff, "helper": helper, "restricted": restricted_ids}
         await self.save_config("roles", roles_data)
 
     async def get_roles(self):
@@ -228,12 +210,9 @@ class Database:
     async def add_category(self, name, questions, points, slots):
         if self.backend == "firestore":
             try:
-                async def _op():
+                def _op():
                     self.fs.collection("categories").document(str(name)).set({
-                        "name": name,
-                        "questions": questions,
-                        "points": points,
-                        "slots": slots,
+                        "name": name, "questions": questions, "points": points, "slots": slots,
                     })
                 return await self._fs_run(_op)
             except Exception as e:
@@ -249,7 +228,7 @@ class Database:
     async def remove_category(self, name):
         if self.backend == "firestore":
             try:
-                async def _op():
+                def _op():
                     self.fs.collection("categories").document(str(name)).delete()
                     return True
                 await self._fs_run(_op)
@@ -292,11 +271,9 @@ class Database:
     async def add_custom_command(self, name, text, image=None):
         if self.backend == "firestore":
             try:
-                async def _op():
+                def _op():
                     self.fs.collection("custom_commands").document(str(name)).set({
-                        "name": name,
-                        "text": text,
-                        "image": image,
+                        "name": name, "text": text, "image": image,
                     })
                 return await self._fs_run(_op)
             except Exception as e:
@@ -311,7 +288,7 @@ class Database:
     async def remove_custom_command(self, name):
         if self.backend == "firestore":
             try:
-                async def _op():
+                def _op():
                     self.fs.collection("custom_commands").document(str(name)).delete()
                     return True
                 await self._fs_run(_op)
@@ -340,11 +317,11 @@ class Database:
             rows = await cursor.fetchall()
             return [{"name": r[0], "text": r[1], "image": r[2]} for r in rows]
 
-    # ---------- CONFIG (generic) ----------
+    # ---------- CONFIG ----------
     async def save_config(self, key, value_dict):
         if self.backend == "firestore":
             try:
-                async def _op():
+                def _op():
                     self.fs.collection("config").document(str(key)).set(value_dict)
                 return await self._fs_run(_op)
             except Exception as e:
@@ -375,8 +352,10 @@ class Database:
     async def set_points(self, user_id, points):
         if self.backend == "firestore":
             try:
-                async def _op():
-                    self.fs.collection("user_points").document(str(user_id)).set({"user_id": int(user_id), "points": int(points)})
+                def _op():
+                    self.fs.collection("user_points").document(str(user_id)).set({
+                        "user_id": int(user_id), "points": int(points)
+                    })
                 return await self._fs_run(_op)
             except Exception as e:
                 await self._fallback_to_sqlite(str(e))
@@ -405,7 +384,7 @@ class Database:
     async def reset_points(self):
         if self.backend == "firestore":
             try:
-                async def _op():
+                def _op():
                     docs = list(self.fs.collection("user_points").stream())
                     for d in docs:
                         d.reference.delete()
@@ -436,7 +415,7 @@ class Database:
     async def delete_user_points(self, user_id):
         if self.backend == "firestore":
             try:
-                async def _op():
+                def _op():
                     self.fs.collection("user_points").document(str(user_id)).delete()
                 return await self._fs_run(_op)
             except Exception as e:
