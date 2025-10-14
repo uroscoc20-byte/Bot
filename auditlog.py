@@ -1,3 +1,4 @@
+# audit_log.py
 import discord
 from discord.ext import commands
 from collections import deque
@@ -100,3 +101,4 @@ class AuditLogModule(commands.Cog):
 
 def setup(bot: commands.Bot):
     bot.add_cog(AuditLogModule(bot))
+
