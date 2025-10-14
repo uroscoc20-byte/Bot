@@ -37,6 +37,7 @@ initial_extensions = [
     "custom_commands",
     "custom_simple",  # NEW: manage !custom commands via slash
     "audit_log",      # NEW: log slash and prefix commands
+    "verification",   # RESTORED: verification panel/tickets
     "bot_speak"  # optional
 ]
 
