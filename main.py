@@ -35,8 +35,9 @@ initial_extensions = [
     "tickets",
     "points",
     "custom_commands",
-    "custom_simple",  # NEW: manage !custom text commands and edit via modal
-    "audit_log",      # NEW: log slash and prefix commands
+    "custom_simple",  # manage !custom text commands and edit via modal
+    "audit_log",      # log slash and prefix commands
+    "verification",   # verification panel/tickets
     "bot_speak"  # optional
 ]
 

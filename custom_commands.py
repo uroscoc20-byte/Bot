@@ -10,36 +10,14 @@ class CustomCommandsModule(commands.Cog):
         self.custom_commands = {}
 
     async def load_commands(self):
-        rows = await db.get_custom_commands()
-        self.custom_commands = {r["name"]: {"text": r["text"], "image": r["image"]} for r in rows}
+        # Legacy support only; dynamic slash custom commands are disabled.
+        self.custom_commands = {}
 
     @commands.Cog.listener()
     async def on_ready(self):
         await self.load_commands()
-        for name in self.custom_commands:
-            if not self.bot.tree.get_command(name):
-                self.bot.tree.add_command(
-                    discord.app_commands.Command(
-                        name=name,
-                        description=f"Custom command: {name}",
-                        callback=self.dynamic_command,
-                    )
-                )
-        try:
-            await self.bot.tree.sync()
-        except Exception:
-            pass
 
-    async def dynamic_command(self, interaction: discord.Interaction):
-        command_name = interaction.data.get("name")
-        data = self.custom_commands.get(command_name)
-        if not data:
-            await interaction.response.send_message("Command not found.", ephemeral=True)
-            return
-        embed = discord.Embed(title=command_name, description=data["text"], color=0xFFD700)
-        if data.get("image"):
-            embed.set_image(url=data["image"])
-        await interaction.response.send_message(embed=embed)
+    # Dynamic slash custom commands are disabled.
 
     @commands.slash_command(name="custom_add", description="Add a custom command (Admin only)")
     async def custom_add(
@@ -49,49 +27,22 @@ class CustomCommandsModule(commands.Cog):
         text: discord.Option(str, "Text to display"),
         image: discord.Option(str, "Optional image URL", required=False),
     ):
-        if not ctx.user.guild_permissions.administrator:
-            await ctx.respond("You are not allowed to run this.", ephemeral=True)
-            return
-        await db.add_custom_command(name, text, image)
-        self.custom_commands[name] = {"text": text, "image": image}
-        await ctx.respond(f"✅ Custom command `{name}` added.")
-        if not self.bot.tree.get_command(name):
-            self.bot.tree.add_command(
-                discord.app_commands.Command(name=name, description=f"Custom command: {name}", callback=self.dynamic_command)
-            )
-        try:
-            await self.bot.tree.sync()
-        except Exception:
-            pass
+        await ctx.respond(
+            "Custom command creation is disabled. Use `/custom_text_edit` to configure `!proof`, `!rrules`, `!hrules`.",
+            ephemeral=True,
+        )
 
     @commands.slash_command(name="custom_remove", description="Remove a custom command (Admin only)")
     async def custom_remove(self, ctx: discord.ApplicationContext, name: discord.Option(str, "Command name")):
-        if not ctx.user.guild_permissions.administrator:
-            await ctx.respond("You are not allowed to run this.", ephemeral=True)
-            return
-        if name not in self.custom_commands:
-            await ctx.respond(f"⚠ Custom command `{name}` does not exist.", ephemeral=True)
-            return
-        self.custom_commands.pop(name)
-        await db.remove_custom_command(name)
-        await ctx.respond(f"✅ Custom command `{name}` removed.")
-        if self.bot.tree.get_command(name):
-            self.bot.tree.remove_command(name)
-        try:
-            await self.bot.tree.sync()
-        except Exception:
-            pass
+        await ctx.respond(
+            "Custom command removal is disabled. Only `!proof`, `!rrules`, `!hrules` are supported via `/custom_text_edit`.",
+            ephemeral=True,
+        )
 
     @commands.slash_command(name="custom_list", description="List all custom commands")
     async def custom_list(self, ctx: discord.ApplicationContext):
-        rows = await db.get_custom_commands()
-        if not rows:
-            await ctx.respond("No custom commands configured.")
-            return
         embed = discord.Embed(title="Custom Commands", color=0xAA00FF)
-        for cmd in rows:
-            img_text = cmd.get("image") or "No image"
-            embed.add_field(name=cmd["name"], value=f"Text: {cmd['text']}\nImage: {img_text}", inline=False)
+        embed.description = "`!proof`, `!rrules`, `!hrules`\nEdit with `/custom_text_edit`."
         await ctx.respond(embed=embed)
 
     @commands.slash_command(name="info", description="Show bot commands and info")
@@ -105,6 +56,7 @@ class CustomCommandsModule(commands.Cog):
             name="🎫 Ticket Commands",
             value=(
                 "`/panel` — Post ticket panel (admin/staff)\n"
+                "`/verification_panel` — Post verification panel (admin/staff)\n"
                 "`/ticket_kick @user [Also remove channel access?]` — Remove from embed, optional channel\n"
                 "`/setup_ticket_category` — Set parent category for tickets (admin)"
             ),

@@ -15,6 +15,7 @@ VERIFICATION_TEXT = (
     "Once submitted, a staff member will review your verification and grant access as soon as possible."
 )
 
+
 class VerificationTicketView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -35,6 +36,7 @@ class VerificationTicketView(View):
         except Exception:
             pass
 
+
 class VerificationModal(Modal):
     def __init__(self, category_id: int | None):
         super().__init__(title="Verification Ticket")
@@ -48,7 +50,6 @@ class VerificationModal(Modal):
         if guild is None:
             return
 
-        # Resolve category (use stored config if not provided)
         parent_category = None
         cat_id = self.category_id
         if not cat_id:
@@ -58,7 +59,6 @@ class VerificationModal(Modal):
             cand = guild.get_channel(int(cat_id))
             parent_category = cand if isinstance(cand, discord.CategoryChannel) else None
 
-        # Overwrites: requestor + staff/admin
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
@@ -71,7 +71,6 @@ class VerificationModal(Modal):
         if admin_role:
             overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_messages=True, manage_channels=True)
 
-        # Create channel
         safe_name = f"verify-{interaction.user.name}".lower().replace(" ", "-")
         try:
             ch = await guild.create_text_channel(
@@ -84,7 +83,6 @@ class VerificationModal(Modal):
             await interaction.followup.send(f"Could not create verification channel: {e}", ephemeral=True)
             return
 
-        # Build embed
         in_game = self.children[0].value
         invited_by = self.children[1].value or "—"
         embed = discord.Embed(
@@ -105,6 +103,7 @@ class VerificationModal(Modal):
 
         await interaction.followup.send(f"✅ Verification ticket created: {ch.mention}", ephemeral=True)
 
+
 class VerificationPanelView(View):
     def __init__(self, category_id: int | None):
         super().__init__(timeout=None)
@@ -113,6 +112,7 @@ class VerificationPanelView(View):
     @discord.ui.button(label="Verify", style=discord.ButtonStyle.green, custom_id="verify_open", emoji="✅")
     async def verify_open(self, button: discord.ui.Button, interaction: discord.Interaction):
         await interaction.response.send_modal(VerificationModal(self.category_id))
+
 
 class VerificationModule(commands.Cog):
     def __init__(self, bot):

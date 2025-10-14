@@ -5,6 +5,7 @@ from collections import deque
 from datetime import datetime
 from database import db
 
+
 def _flatten_options(options) -> list[str]:
     if not options:
         return []
@@ -12,7 +13,7 @@ def _flatten_options(options) -> list[str]:
     for opt in options:
         t = opt.get("type")
         n = opt.get("name")
-        if t in (1, 2):  # subcommand / subcommand group
+        if t in (1, 2):  # subcommand / group
             if n:
                 tokens.append(str(n))
             tokens.extend(_flatten_options(opt.get("options")))
@@ -22,6 +23,7 @@ def _flatten_options(options) -> list[str]:
                 tokens.append(f"{n}={v}")
     return tokens
 
+
 def _build_path_and_args(data: dict) -> tuple[str, str]:
     if not data:
         return ("unknown", "no-args")
@@ -30,6 +32,7 @@ def _build_path_and_args(data: dict) -> tuple[str, str]:
     path_tokens = [name] + [t for t in tokens if "=" not in t]
     args_tokens = [t for t in tokens if "=" in t]
     return (" ".join(path_tokens), " ".join(args_tokens) if args_tokens else "no-args")
+
 
 class AuditLogModule(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -46,7 +49,6 @@ class AuditLogModule(commands.Cog):
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
-        # Log ALL slash commands
         try:
             if interaction.type != discord.InteractionType.application_command:
                 return
@@ -78,31 +80,22 @@ class AuditLogModule(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Log simple custom (!) commands usage too
         try:
-            if message.author.bot:
+            if message.author.bot or not message.guild:
                 return
-            if not message.guild:
+            prefix = await db.get_prefix()
+            content = (message.content or "").strip()
+            if not content.startswith(prefix):
                 return
-            content = message.content.strip()
-            if not content.startswith("!"):
-                return
-            trigger = content.split()[0][1:]  # without '!'
-            if not trigger:
-                return
-
+            trigger = content.split()[0][len(prefix):] or ""
             target = await self._get_audit_channel(message.guild) or message.channel
             if not target:
                 return
-
             utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-            msg = f"🛡️ [{utc_now}] !{trigger} by {message.author.mention} (ID {message.author.id}) in {message.channel.mention}"
-            try:
-                await target.send(msg)
-            except Exception:
-                pass
+            await target.send(f"🛡️ [{utc_now}] {prefix}{trigger} by {message.author.mention} (ID {message.author.id}) in {message.channel.mention}")
         except Exception:
             pass
+
 
 def setup(bot: commands.Bot):
     bot.add_cog(AuditLogModule(bot))
