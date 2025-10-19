@@ -361,14 +361,11 @@ class TicketSelect(Select):
             # Check if user has admin or staff role to override restriction
             admin_role_id = roles_cfg.get("admin") if roles_cfg else None
             staff_role_id = roles_cfg.get("staff") if roles_cfg else None
-            helper_role_id = roles_cfg.get("helper") if roles_cfg else None
             
             has_override_role = False
             if admin_role_id and any(r.id == admin_role_id for r in interaction.user.roles):
                 has_override_role = True
             if staff_role_id and any(r.id == staff_role_id for r in interaction.user.roles):
-                has_override_role = True
-            if helper_role_id and any(r.id == helper_role_id for r in interaction.user.roles):
                 has_override_role = True
             
             if not has_override_role:
@@ -601,14 +598,11 @@ class TicketModule(commands.Cog):
                     # Check if user has admin or staff role to override restriction
                     admin_role_id = roles_cfg.get("admin") if roles_cfg else None
                     staff_role_id = roles_cfg.get("staff") if roles_cfg else None
-                    helper_role_id = roles_cfg.get("helper") if roles_cfg else None
                     
                     has_override_role = False
                     if admin_role_id and any(r.id == admin_role_id for r in interaction.user.roles):
                         has_override_role = True
                     if staff_role_id and any(r.id == staff_role_id for r in interaction.user.roles):
-                        has_override_role = True
-                    if helper_role_id and any(r.id == helper_role_id for r in interaction.user.roles):
                         has_override_role = True
                     
                     if not has_override_role:
