@@ -119,72 +119,6 @@ class TicketModal(Modal):
             self.add_item(ti)
             self.inputs.append(ti)
 
-# ---------- PROOF SUBMISSION MODAL ----------
-class ProofSubmissionModal(Modal):
-    def __init__(self, ticket_channel_id: int):
-        super().__init__(title="Submit Proof")
-        self.ticket_channel_id = ticket_channel_id
-        self.proof_url = InputText(
-            label="Proof Image URL*",
-            placeholder="Paste the image URL here",
-            style=discord.InputTextStyle.short,
-            required=True
-        )
-        self.add_item(self.proof_url)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.defer(ephemeral=True)
-        except Exception:
-            pass
-
-        ticket_info = active_tickets.get(self.ticket_channel_id)
-        if not ticket_info:
-            await interaction.followup.send("Ticket context missing.", ephemeral=True)
-            return
-
-        # Validate URL format
-        proof_url = (self.proof_url.value or "").strip()
-        if not proof_url or not (proof_url.startswith("http://") or proof_url.startswith("https://")):
-            await interaction.followup.send("Please provide a valid image URL starting with http:// or https://", ephemeral=True)
-            return
-
-        # Show proof in ticket channel for staff review
-        try:
-            embed = discord.Embed(
-                title="📸 Proof Submitted",
-                description=f"Proof submitted by {interaction.user.mention}",
-                color=discord.Color.blue()
-            )
-            embed.set_image(url=proof_url)
-            embed.timestamp = datetime.utcnow()
-            
-            channel = interaction.guild.get_channel(self.ticket_channel_id)
-            if channel:
-                await channel.send(embed=embed)
-        except Exception as e:
-            await interaction.followup.send(f"Failed to post proof: {e}", ephemeral=True)
-            return
-
-        # Store proof in ticket info
-        ticket_info["proof_url"] = proof_url
-        ticket_info["proof_submitted_by"] = interaction.user.id
-        ticket_info["closed_stage"] = 1
-
-        await interaction.followup.send("✅ Proof submitted! Staff can now decide on rewards.", ephemeral=True)
-
-    async def callback(self, interaction: discord.Interaction):
-        try:
-            await self.on_submit(interaction)
-        except Exception as e:
-            try:
-                if interaction.response.is_done():
-                    await interaction.followup.send("⚠️ Error submitting proof.", ephemeral=True)
-                else:
-                    await interaction.response.send_message("⚠️ Error submitting proof.", ephemeral=True)
-            except Exception:
-                pass
-
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
         try:
@@ -362,6 +296,72 @@ class ProofSubmissionModal(Modal):
                     await interaction.followup.send("⚠️ Unexpected error creating your ticket.", ephemeral=True)
                 else:
                     await interaction.response.send_message("⚠️ Unexpected error creating your ticket.", ephemeral=True)
+            except Exception:
+                pass
+
+# ---------- PROOF SUBMISSION MODAL ----------
+class ProofSubmissionModal(Modal):
+    def __init__(self, ticket_channel_id: int):
+        super().__init__(title="Submit Proof")
+        self.ticket_channel_id = ticket_channel_id
+        self.proof_url = InputText(
+            label="Proof Image URL*",
+            placeholder="Paste the image URL here",
+            style=discord.InputTextStyle.short,
+            required=True
+        )
+        self.add_item(self.proof_url)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+
+        ticket_info = active_tickets.get(self.ticket_channel_id)
+        if not ticket_info:
+            await interaction.followup.send("Ticket context missing.", ephemeral=True)
+            return
+
+        # Validate URL format
+        proof_url = (self.proof_url.value or "").strip()
+        if not proof_url or not (proof_url.startswith("http://") or proof_url.startswith("https://")):
+            await interaction.followup.send("Please provide a valid image URL starting with http:// or https://", ephemeral=True)
+            return
+
+        # Show proof in ticket channel for staff review
+        try:
+            embed = discord.Embed(
+                title="📸 Proof Submitted",
+                description=f"Proof submitted by {interaction.user.mention}",
+                color=discord.Color.blue()
+            )
+            embed.set_image(url=proof_url)
+            embed.timestamp = datetime.utcnow()
+            
+            channel = interaction.guild.get_channel(self.ticket_channel_id)
+            if channel:
+                await channel.send(embed=embed)
+        except Exception as e:
+            await interaction.followup.send(f"Failed to post proof: {e}", ephemeral=True)
+            return
+
+        # Store proof in ticket info
+        ticket_info["proof_url"] = proof_url
+        ticket_info["proof_submitted_by"] = interaction.user.id
+        ticket_info["closed_stage"] = 1
+
+        await interaction.followup.send("✅ Proof submitted! Staff can now decide on rewards.", ephemeral=True)
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            await self.on_submit(interaction)
+        except Exception as e:
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send("⚠️ Error submitting proof.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("⚠️ Error submitting proof.", ephemeral=True)
             except Exception:
                 pass
 
