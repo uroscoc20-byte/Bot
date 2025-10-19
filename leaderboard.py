@@ -21,7 +21,7 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord
 
     description = "\n".join(lines) if lines else "No entries yet."
     embed = discord.Embed(
-        title="🏆 Helper's Leaderboard Season 7",
+        title="🏆 HELPER'S LEADERBOARD SEASON 7 🏆",
         description=description,
         color=ACCENT,
     )
