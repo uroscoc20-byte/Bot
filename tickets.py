@@ -116,6 +116,72 @@ class TicketModal(Modal):
             self.add_item(ti)
             self.inputs.append(ti)
 
+# ---------- PROOF SUBMISSION MODAL ----------
+class ProofSubmissionModal(Modal):
+    def __init__(self, ticket_channel_id: int):
+        super().__init__(title="Submit Proof")
+        self.ticket_channel_id = ticket_channel_id
+        self.proof_url = InputText(
+            label="Proof Image URL*",
+            placeholder="Paste the image URL here",
+            style=discord.InputTextStyle.short,
+            required=True
+        )
+        self.add_item(self.proof_url)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+
+        ticket_info = active_tickets.get(self.ticket_channel_id)
+        if not ticket_info:
+            await interaction.followup.send("Ticket context missing.", ephemeral=True)
+            return
+
+        # Validate URL format
+        proof_url = (self.proof_url.value or "").strip()
+        if not proof_url or not (proof_url.startswith("http://") or proof_url.startswith("https://")):
+            await interaction.followup.send("Please provide a valid image URL starting with http:// or https://", ephemeral=True)
+            return
+
+        # Show proof in ticket channel for staff review
+        try:
+            embed = discord.Embed(
+                title="📸 Proof Submitted",
+                description=f"Proof submitted by {interaction.user.mention}",
+                color=discord.Color.blue()
+            )
+            embed.set_image(url=proof_url)
+            embed.timestamp = datetime.utcnow()
+            
+            channel = interaction.guild.get_channel(self.ticket_channel_id)
+            if channel:
+                await channel.send(embed=embed)
+        except Exception as e:
+            await interaction.followup.send(f"Failed to post proof: {e}", ephemeral=True)
+            return
+
+        # Store proof in ticket info
+        ticket_info["proof_url"] = proof_url
+        ticket_info["proof_submitted_by"] = interaction.user.id
+        ticket_info["closed_stage"] = 1
+
+        await interaction.followup.send("✅ Proof submitted! Staff can now decide on rewards.", ephemeral=True)
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            await self.on_submit(interaction)
+        except Exception as e:
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send("⚠️ Error submitting proof.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("⚠️ Error submitting proof.", ephemeral=True)
+            except Exception:
+                pass
+
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
         try:
@@ -665,40 +731,8 @@ class TicketModule(commands.Cog):
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
-                # 1st close: remove helpers and requestor access; keep staff/admin only
-                helpers = [h for h in ticket_info["helpers"] if h]
-                # Revoke helper role view access for the channel
-                helper_role_id = roles_cfg.get("helper") if roles_cfg else None
-                if helper_role_id:
-                    helper_role = interaction.guild.get_role(helper_role_id)
-                    if helper_role:
-                        try:
-                            await interaction.channel.set_permissions(helper_role, view_channel=False, send_messages=False)
-                        except Exception:
-                            pass
-                # Revoke per-user access for non-staff/non-admin helpers
-                staff_role_id = roles_cfg.get("staff") if roles_cfg else None
-                admin_role_id = roles_cfg.get("admin") if roles_cfg else None
-                for uid in helpers:
-                    member = interaction.guild.get_member(uid)
-                    if not member:
-                        continue
-                    try:
-                        is_admin = bool(admin_role_id and any(r.id == admin_role_id for r in member.roles))
-                        is_staff_member = bool(staff_role_id and any(r.id == staff_role_id for r in member.roles))
-                        if not (is_admin or is_staff_member):
-                            await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
-                    except Exception:
-                        pass
-                # Revoke requestor access too
-                try:
-                    requestor_member = interaction.guild.get_member(ticket_info["requestor"]) if ticket_info.get("requestor") else None
-                    if requestor_member:
-                        await interaction.channel.set_permissions(requestor_member, view_channel=False, send_messages=False)
-                except Exception:
-                    pass
-                ticket_info["closed_stage"] = 1
-                await interaction.response.send_message("Helpers removed from channel. Click again to choose reward.", ephemeral=True)
+                # 1st close: show proof submission modal
+                await interaction.response.send_modal(ProofSubmissionModal(interaction.channel.id))
             elif stage == 1:
                 # Only staff/admin can decide rewards
                 roles_cfg = await db.get_roles()
