@@ -305,7 +305,7 @@ class TicketView(View):
 
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)
         self.ticket_channel_id = ticket_channel_id
 
     @discord.ui.button(label="Reward helpers", style=discord.ButtonStyle.green, custom_id="reward_yes")
