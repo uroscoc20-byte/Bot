@@ -30,10 +30,18 @@ DEFAULT_SLOTS = 3
 DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room?*", "Anything else?"]
 
 def get_fallback_category(category_name: str):
+    points = DEFAULT_POINT_VALUES.get(category_name, 0)
+    print(f"[FALLBACK DEBUG] Category: '{category_name}' -> Points: {points}")
+    
+    # Warn if category not found
+    if points == 0 and category_name not in DEFAULT_POINT_VALUES:
+        print(f"[FALLBACK DEBUG] WARNING: Category '{category_name}' not found in DEFAULT_POINT_VALUES!")
+        print(f"[FALLBACK DEBUG] Available categories: {list(DEFAULT_POINT_VALUES.keys())}")
+    
     return {
         "name": category_name,
         "questions": DEFAULT_QUESTIONS,
-        "points": DEFAULT_POINT_VALUES.get(category_name, 0),
+        "points": points,
         "slots": DEFAULT_HELPER_SLOTS.get(category_name, DEFAULT_SLOTS),
     }
 
@@ -329,7 +337,16 @@ class RewardChoiceView(View):
             category = ticket_info["category"]
             cat_data = await db.get_category(category)
             fallback_data = get_fallback_category(category)
-            points_value = (cat_data or fallback_data)["points"]
+            
+            # Always use fallback points to ensure correct values
+            # Database might have 0 points or wrong values
+            points_value = fallback_data["points"]
+            
+            # Log what we're using
+            if cat_data and cat_data.get("points", 0) > 0:
+                print(f"[REWARD DEBUG] Database has {cat_data['points']} points, but using fallback {points_value}")
+            else:
+                print(f"[REWARD DEBUG] Using fallback points: {points_value} (database had: {cat_data.get('points', 'None') if cat_data else 'None'})")
             
             logger.info(f"Rewarding helpers for '{category}' ticket")
             logger.info(f"Database category data: {cat_data}")
@@ -337,8 +354,18 @@ class RewardChoiceView(View):
             logger.info(f"Final points value: {points_value}")
             logger.info(f"Helpers to reward: {[h for h in ticket_info.get('helpers', []) if h]}")
             
+            # Print to console for immediate debugging
+            print(f"[REWARD DEBUG] Category: '{category}'")
+            print(f"[REWARD DEBUG] Database data: {cat_data}")
+            print(f"[REWARD DEBUG] Fallback data: {fallback_data}")
+            print(f"[REWARD DEBUG] Points value: {points_value}")
+            print(f"[REWARD DEBUG] Available in DEFAULT_POINT_VALUES: {category in DEFAULT_POINT_VALUES}")
+            if category in DEFAULT_POINT_VALUES:
+                print(f"[REWARD DEBUG] DEFAULT_POINT_VALUES['{category}'] = {DEFAULT_POINT_VALUES[category]}")
+            
             if points_value == 0:
                 logger.warning(f"Points value is 0 for category '{category}' - this might be a configuration issue")
+                print(f"[REWARD DEBUG] WARNING: Points value is 0 for '{category}'!")
             
             await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
             await generate_ticket_transcript(ticket_info, rewarded=True)
