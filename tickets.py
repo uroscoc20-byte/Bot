@@ -346,33 +346,6 @@ class TicketSelect(Select):
             custom_id="ticket_select",  # fixed for persistence across restarts
         )
 
-    async def callback(self, interaction: discord.Interaction):
-        member_role_ids = [role.id for role in interaction.user.roles]
-        roles_cfg = await db.get_roles()
-        restricted_raw = roles_cfg.get("restricted", []) if roles_cfg else []
-        restricted_ids = []
-        for r in restricted_raw:
-            try:
-                restricted_ids.append(int(r))
-            except Exception:
-                pass
-        if any(rid in member_role_ids for rid in restricted_ids):
-            await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
-            return
-
-        if not bot_can_manage_channels(interaction):
-            await interaction.response.send_message(
-                "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
-                ephemeral=True,
-            )
-            return
-
-        category_name = self.values[0]
-        cat_data = await db.get_category(category_name)
-        if not cat_data:
-            cat_data = get_fallback_category(category_name)
-        await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
-
 class TicketPanelView(View):
     def __init__(self, categories):
         super().__init__(timeout=None)
@@ -432,6 +405,60 @@ class TicketModule(commands.Cog):
             inline=False,
         )
         await ctx.respond(embed=embed, view=view)
+
+    @commands.slash_command(name="panel_refresh", description="Refresh ticket panel in this channel (staff/admin only)")
+    async def panel_refresh(self, ctx: discord.ApplicationContext):
+        roles_cfg = await db.get_roles()
+        staff_role_id = roles_cfg.get("staff")
+        admin_role_id = roles_cfg.get("admin")
+        is_allowed = ctx.user.guild_permissions.administrator
+        if admin_role_id:
+            is_allowed = is_allowed or any(r.id == admin_role_id for r in ctx.user.roles)
+        if staff_role_id:
+            is_allowed = is_allowed or any(r.id == staff_role_id for r in ctx.user.roles)
+        if not is_allowed:
+            await ctx.respond("You don't have permission to refresh the ticket panel.", ephemeral=True)
+            return
+
+        # Delete older panels from this channel
+        deleted = 0
+        try:
+            async for msg in ctx.channel.history(limit=200):
+                if msg.author.id != ctx.bot.user.id:
+                    continue
+                if msg.embeds and msg.embeds[0].title == "🎮 In-game Assistance":
+                    try:
+                        await msg.delete()
+                        deleted += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        categories = await db.get_categories()
+        if not categories:
+            categories = [{
+                "name": name,
+                "questions": DEFAULT_QUESTIONS,
+                "points": DEFAULT_POINT_VALUES[name],
+                "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
+            } for name in DEFAULT_POINT_VALUES.keys()]
+        panel_cfg = await db.get_panel_config()
+        view = TicketPanelView(categories)
+        embed = discord.Embed(
+            title="🎮 In-game Assistance",
+            description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
+            color=panel_cfg.get("color", 0x5865F2),
+        )
+        services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
+        embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
+        embed.add_field(
+            name="ℹ️ How it works",
+            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
+            inline=False,
+        )
+        await ctx.respond(f"Refreshed panel (removed {deleted} old).", ephemeral=True)
+        await ctx.channel.send(embed=embed, view=view)
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
     async def ticket_kick(
@@ -660,6 +687,25 @@ class TicketModule(commands.Cog):
                     await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
                 except Exception:
                     pass
+        elif custom_id in {"reward_yes", "reward_no"}:
+            ticket_info = active_tickets.get(channel_id)
+            if not ticket_info:
+                await interaction.response.send_message("Ticket context missing.", ephemeral=True)
+                return
+            if custom_id == "reward_yes":
+                category = ticket_info["category"]
+                cat_data = await db.get_category(category)
+                points_value = (cat_data or get_fallback_category(category))["points"]
+                await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
+                await generate_ticket_transcript(ticket_info, rewarded=True)
+                ticket_info["rewarded"] = True
+                ticket_info["closed_stage"] = 2
+                await interaction.response.send_message("Helpers rewarded and transcript generated. Click Close again to delete.", ephemeral=True)
+            else:
+                await generate_ticket_transcript(ticket_info, rewarded=False)
+                ticket_info["rewarded"] = False
+                ticket_info["closed_stage"] = 2
+                await interaction.response.send_message("Transcript generated without rewards. Click Close again to delete.", ephemeral=True)
 
 def setup(bot):
     bot.add_cog(TicketModule(bot))
