@@ -94,7 +94,7 @@ class VerificationModal(Modal):
         embed.add_field(name="In-game name", value=in_game, inline=False)
         embed.add_field(name="Invited by", value=invited_by, inline=False)
 
-        mention = staff_role.mention if staff_role else (admin_role.mention if admin_role else "")
+        mention = f"{interaction.user.mention} {staff_role.mention if staff_role else (admin_role.mention if admin_role else '')}"
         msg = await ch.send(content=mention, embed=embed, view=VerificationTicketView())
         try:
             await msg.pin()
