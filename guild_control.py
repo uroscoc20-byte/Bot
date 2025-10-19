@@ -52,6 +52,26 @@ class GuildControl(commands.Cog):
             except Exception:
                 pass
 
+    @commands.slash_command(name="leave", description="Make the bot leave this server (Admin only)")
+    async def leave(self, ctx: discord.ApplicationContext):
+        if not ctx.guild:
+            await ctx.respond("This command must be used in a server.", ephemeral=True)
+            return
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You must be an Administrator to run this.", ephemeral=True)
+            return
+        try:
+            await ctx.respond("👋 Leaving this server...", ephemeral=True)
+        except Exception:
+            pass
+        try:
+            await ctx.guild.leave()
+        except Exception as e:
+            try:
+                await ctx.respond(f"Failed to leave: {e}", ephemeral=True)
+            except Exception:
+                pass
+
     @commands.slash_command(name="leave_non_home", description="Leave all servers except the configured home guild (Admin only)")
     async def leave_non_home(self, ctx: discord.ApplicationContext):
         if not ctx.user.guild_permissions.administrator:
