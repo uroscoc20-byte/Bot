@@ -7,6 +7,9 @@ from database import db
 from datetime import datetime
 from io import StringIO
 
+# Set up logger
+logger = logging.getLogger(__name__)
+
 # ---------- DEFAULTS ----------
 DEFAULT_POINT_VALUES = {
     "Ultra Speaker Express": 8,
@@ -199,7 +202,8 @@ class ProofSubmissionModal(Modal):
 
             try:
                 number = await db.increment_ticket_number(self.category)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to increment ticket number for {self.category}: {e}")
                 number = 1
             channel_name = f"{self.category.lower().replace(' ', '-')}-{number}"
 
@@ -213,7 +217,8 @@ class ProofSubmissionModal(Modal):
                 cat_id = await db.get_ticket_category()
                 cand = guild.get_channel(cat_id) if cat_id else None
                 parent_category = cand if isinstance(cand, discord.CategoryChannel) else None
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to get ticket category: {e}")
                 parent_category = None
 
             ticket_channel = None
@@ -366,8 +371,8 @@ class TicketView(View):
         super().__init__(timeout=None)
         self.category = category
         self.requestor_id = requestor_id
-        self.add_item(Button(label="Join", style=discord.ButtonStyle.green, custom_id="join_ticket", emoji="➕"))
-        self.add_item(Button(label="Close", style=discord.ButtonStyle.gray, custom_id="close_ticket", emoji="🧹"))
+        self.add_item(Button(label="Join", style=discord.ButtonStyle.danger, custom_id="join_ticket", emoji="<:URE:1429522388395233331>"))
+        self.add_item(Button(label="Close", style=discord.ButtonStyle.danger, custom_id="close_ticket", emoji="🧹"))
 
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
@@ -440,7 +445,13 @@ class TicketPanelView(View):
         for cat in categories[:25]:  # Discord max 25 buttons per view
             label = cat.get("name", "Category")
             custom_id = f"open_ticket::{label}"
-            self.add_item(Button(label=label, style=discord.ButtonStyle.blurple, custom_id=custom_id))
+            # Custom dark red button with URE emoji
+            self.add_item(Button(
+                label=label, 
+                style=discord.ButtonStyle.danger, 
+                custom_id=custom_id,
+                emoji="<:URE:1429522388395233331>"
+            ))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return True
