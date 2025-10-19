@@ -3,7 +3,7 @@ from database import db
 
 ACCENT = 0x5865F2
 
-async def create_leaderboard_embed(page: int = 1, per_page: int = 20) -> discord.Embed:
+async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord.Embed:
     rows = await db.get_leaderboard()
     sorted_points = sorted(rows, key=lambda x: x[1], reverse=True)
     total_pages = max(1, (len(sorted_points) + per_page - 1) // per_page)
@@ -14,10 +14,10 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 20) -> discord
     lines = []
     top_emojis = ["🥇", "🥈", "🥉"]
     for idx, (user_id, pts) in enumerate(sorted_points[start:end], start=start + 1):
-        prefix = f"#{idx} "
+        prefix = f"**#{idx}** "
         if idx <= 3:
             prefix += f"{top_emojis[idx - 1]} "
-        lines.append(f"{prefix}<@{user_id}> — **{pts}**")
+        lines.append(f"{prefix}<@{user_id}>\n└ **{pts:,} points**")
 
     description = "\n".join(lines) if lines else "No entries yet."
     embed = discord.Embed(
@@ -25,7 +25,7 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 20) -> discord
         description=description,
         color=ACCENT,
     )
-    embed.set_footer(text=f"Page {page}/{total_pages}")
+    embed.set_footer(text=f"📄 Page {page}/{total_pages} • 🔄 Auto-refreshes every 15 minutes")
     return embed
 
 
