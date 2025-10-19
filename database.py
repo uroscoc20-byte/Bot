@@ -95,6 +95,16 @@ class Database:
         )
         """)
         await self.db.execute("""
+        CREATE TABLE IF NOT EXISTS active_tickets (
+            channel_id INTEGER PRIMARY KEY,
+            message_id INTEGER,
+            category TEXT,
+            requestor INTEGER,
+            helpers TEXT,
+            slots INTEGER
+        )
+        """)
+        await self.db.execute("""
         CREATE TABLE IF NOT EXISTS categories (
             name TEXT PRIMARY KEY,
             questions TEXT,
@@ -464,6 +474,92 @@ class Database:
         )
         await self.db.commit()
         return last
+
+    # ---------- ACTIVE TICKETS PERSISTENCE ----------
+    async def set_active_ticket(self, channel_id: int, message_id: int, category: str, requestor: int, helpers: list[int | None], slots: int):
+        helpers_json = json.dumps(helpers)
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("active_tickets").document(str(channel_id)).set({
+                        "channel_id": int(channel_id),
+                        "message_id": int(message_id),
+                        "category": category,
+                        "requestor": int(requestor),
+                        "helpers": helpers,
+                        "slots": int(slots),
+                    })
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        await self.db.execute(
+            "INSERT INTO active_tickets(channel_id, message_id, category, requestor, helpers, slots) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(channel_id) DO UPDATE SET message_id=excluded.message_id, category=excluded.category, requestor=excluded.requestor, helpers=excluded.helpers, slots=excluded.slots",
+            (channel_id, message_id, category, requestor, helpers_json, slots)
+        )
+        await self.db.commit()
+
+    async def get_active_ticket(self, channel_id: int):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    snap = self.fs.collection("active_tickets").document(str(channel_id)).get()
+                    return snap.to_dict() if snap.exists else None
+                data = await self._fs_run(_op)
+                if not data:
+                    return None
+                return {
+                    "channel_id": int(data.get("channel_id", channel_id)),
+                    "message_id": int(data.get("message_id")),
+                    "category": data.get("category"),
+                    "requestor": int(data.get("requestor")),
+                    "helpers": list(data.get("helpers", [])),
+                    "slots": int(data.get("slots", 0)),
+                }
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        async with self.db.execute("SELECT message_id, category, requestor, helpers, slots FROM active_tickets WHERE channel_id = ?", (channel_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            helpers = []
+            try:
+                helpers = json.loads(row[3]) if row[3] else []
+            except Exception:
+                helpers = []
+            return {
+                "channel_id": channel_id,
+                "message_id": row[0],
+                "category": row[1],
+                "requestor": row[2],
+                "helpers": helpers,
+                "slots": row[4],
+            }
+
+    async def update_active_ticket_helpers(self, channel_id: int, helpers: list[int | None]):
+        helpers_json = json.dumps(helpers)
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("active_tickets").document(str(channel_id)).update({
+                        "helpers": helpers,
+                    })
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        await self.db.execute("UPDATE active_tickets SET helpers = ? WHERE channel_id = ?", (helpers_json, channel_id))
+        await self.db.commit()
+
+    async def delete_active_ticket(self, channel_id: int):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("active_tickets").document(str(channel_id)).delete()
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        await self.db.execute("DELETE FROM active_tickets WHERE channel_id = ?", (channel_id,))
+        await self.db.commit()
 
 
 db = Database()

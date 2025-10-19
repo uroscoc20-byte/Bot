@@ -4,6 +4,7 @@ from leaderboard import create_leaderboard_embed, LeaderboardView
 from database import db
 
 ACCENT = 0x5865F2
+LB_PER_PAGE = 20
 
 class PointsModule(commands.Cog):
     def __init__(self, bot):
@@ -42,7 +43,7 @@ class PointsModule(commands.Cog):
         page: discord.Option(int, "Page number", required=False, default=1),
     ):
         rows = await db.get_leaderboard()
-        per_page = 10
+        per_page = LB_PER_PAGE
         total_pages = max(1, (len(rows) + per_page - 1) // per_page)
         if not rows:
             await ctx.respond("Leaderboard is empty.")
@@ -120,6 +121,57 @@ class PointsModule(commands.Cog):
             return
         await db.delete_user_points(user.id)
         await ctx.respond(f"Removed {user.mention} from the leaderboard.", ephemeral=True)
+
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        # Handle leaderboard pagination via custom_id so buttons keep working indefinitely
+        try:
+            if interaction.type != discord.InteractionType.component:
+                return
+            data = getattr(interaction, "data", None) or {}
+            custom_id = data.get("custom_id")
+            if custom_id not in {"lb_prev", "lb_next"}:
+                return
+
+            message = interaction.message
+            if not message or not message.embeds:
+                await interaction.response.defer()
+                return
+
+            # Parse current page from footer like "Page X/Y"
+            footer_text = (message.embeds[0].footer.text or "").strip() if message.embeds[0].footer else ""
+            current_page = 1
+            if footer_text.lower().startswith("page") and "/" in footer_text:
+                try:
+                    left = footer_text.split()[1]  # "X/Y"
+                    current_page = int(left.split("/")[0])
+                except Exception:
+                    current_page = 1
+
+            rows = await db.get_leaderboard()
+            per_page = LB_PER_PAGE
+            total_pages = max(1, (len(rows) + per_page - 1) // per_page)
+
+            if custom_id == "lb_prev":
+                new_page = max(1, current_page - 1)
+            else:
+                new_page = min(total_pages, current_page + 1)
+
+            if new_page == current_page:
+                await interaction.response.defer()
+                return
+
+            embed = await create_leaderboard_embed(page=new_page, per_page=per_page)
+            # Replace the view to update disabled states while keeping persistent custom_ids
+            view = LeaderboardView(new_page, total_pages, per_page)
+            await interaction.response.edit_message(embed=embed, view=view)
+        except Exception:
+            # Best-effort safety: don't break other interactions
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.defer()
+            except Exception:
+                pass
 
 def setup(bot):
     bot.add_cog(PointsModule(bot))

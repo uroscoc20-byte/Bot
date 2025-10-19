@@ -269,6 +269,19 @@ class TicketModal(Modal):
                 "answers": form_answers,
             }
 
+            # Persist minimal info so buttons keep working after restarts
+            try:
+                await db.set_active_ticket(
+                    channel_id=ticket_channel.id,
+                    message_id=msg.id,
+                    category=self.category,
+                    requestor=interaction.user.id,
+                    helpers=[None] * self.slots,
+                    slots=self.slots,
+                )
+            except Exception:
+                pass
+
             await interaction.followup.send(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
 
         except Exception as e:
@@ -338,7 +351,8 @@ class RewardChoiceView(View):
 class TicketSelect(Select):
     def __init__(self, categories):
         options = [discord.SelectOption(label=cat["name"]) for cat in categories]
-        super().__init__(placeholder="Choose ticket type...", min_values=1, max_values=1, options=options)
+        # Add a stable custom_id so the select remains active after restarts
+        super().__init__(placeholder="Choose ticket type...", min_values=1, max_values=1, options=options, custom_id="ticket_select")
 
     async def callback(self, interaction: discord.Interaction):
         member_role_ids = [role.id for role in interaction.user.roles]
@@ -370,7 +384,21 @@ class TicketSelect(Select):
 class TicketPanelView(View):
     def __init__(self, categories):
         super().__init__(timeout=None)
+        # Ensure the select has a stable custom_id for persistent view handling
         self.add_item(TicketSelect(categories))
+
+    # Rebuild the select's options on ready registration to reflect latest categories
+    @classmethod
+    async def build_with_current_categories(cls):
+        categories = await db.get_categories()
+        if not categories:
+            categories = [{
+                "name": name,
+                "questions": DEFAULT_QUESTIONS,
+                "points": DEFAULT_POINT_VALUES[name],
+                "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
+            } for name in DEFAULT_POINT_VALUES.keys()]
+        return cls(categories)
 
 # ---------- COG ----------
 class TicketModule(commands.Cog):
@@ -473,6 +501,11 @@ class TicketModule(commands.Cog):
                     value = f"<@{helper_id}>" if helper_id else "Empty"
                     embed.set_field_at(base_index + i, name=f"Helper Slot {i+1}", value=value, inline=True)
                 await ticket_info["embed_msg"].edit(embed=embed)
+            except Exception:
+                pass
+
+            try:
+                await db.update_active_ticket_helpers(channel_id, ticket_info["helpers"])
             except Exception:
                 pass
 
@@ -614,6 +647,10 @@ class TicketModule(commands.Cog):
                 active_tickets.pop(channel_id, None)
                 try:
                     await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
+                except Exception:
+                    pass
+                try:
+                    await db.delete_active_ticket(channel_id)
                 except Exception:
                     pass
 
