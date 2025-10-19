@@ -370,7 +370,17 @@ class TicketSelect(Select):
 class TicketPanelView(View):
     def __init__(self, categories):
         super().__init__(timeout=None)
-        self.add_item(TicketSelect(categories))
+        # Create a button per category instead of a select menu
+        for cat in categories[:25]:  # Discord max 25 buttons per view
+            label = cat.get("name", "Category")
+            custom_id = f"open_ticket::{label}"
+            self.add_item(Button(label=label, style=discord.ButtonStyle.blurple, custom_id=custom_id))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return True
+
+    async def on_timeout(self):
+        pass
 
 # ---------- COG ----------
 class TicketModule(commands.Cog):
@@ -418,12 +428,60 @@ class TicketModule(commands.Cog):
             description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
             color=panel_cfg.get("color", 0x5865F2),
         )
-        services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
-        embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
-        embed.add_field(
-            name="ℹ️ How it works",
-            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
-            inline=False,
+        # Custom panel content per request
+        embed.clear_fields()
+        embed.description = (
+            "## Ticket types\n"
+            "**GrimChallenge Express**\n"
+            "- Mechabinky & Raxborg 2.0\n"
+            "**UltraSpeaker Express**\n"
+            "- The First Speaker\n"
+            "**Weekly Ultra Express**\n"
+            "- Weekly Ultra Bosses\n"
+            "  - Darkon, Drakath, Dage, Nulgath, Drago\n"
+            "**Daily 7-Man Express**\n"
+            "- Daily 7-Man Ultra Bosses\n"
+            "  - Astralshrine, KathoolDepths, Originul, ApexAzalith, Lich Lord/Beast/Deimos (Daily Exercises 2 through 4), Lavarockshore\n"
+            "**Daily 4-Man Express**\n"
+            "- Daily 4-Man Ultra Bosses\n"
+            "  - Ezrajal, Warden, Engineer, Tyndarius, Dage (Daily Exercise 6), Iara, Kala\n"
+            "**Daily Temple Express**\n"
+            "- Daily TempleShrine\n"
+            "  - Left Dungeon, Right Dungeon, Middle Dungeon\n"
+            "**Ultra Gramiel Express**\n"
+            "- Ultra Gramiel\n\n"
+            "## ℹ️ How it works\n"
+            "- Select a \"ticket type\"\n"
+            "- Fill out the form\n"
+            "- Helpers join\n"
+            "- Get help in your private ticket"
+        )
+        embed.clear_fields()
+        embed.description = (
+            "## Ticket types\n"
+            "**GrimChallenge Express**\n"
+            "- Mechabinky & Raxborg 2.0\n"
+            "**UltraSpeaker Express**\n"
+            "- The First Speaker\n"
+            "**Weekly Ultra Express**\n"
+            "- Weekly Ultra Bosses\n"
+            "  - Darkon, Drakath, Dage, Nulgath, Drago\n"
+            "**Daily 7-Man Express**\n"
+            "- Daily 7-Man Ultra Bosses\n"
+            "  - Astralshrine, KathoolDepths, Originul, ApexAzalith, Lich Lord/Beast/Deimos (Daily Exercises 2 through 4), Lavarockshore\n"
+            "**Daily 4-Man Express**\n"
+            "- Daily 4-Man Ultra Bosses\n"
+            "  - Ezrajal, Warden, Engineer, Tyndarius, Dage (Daily Exercise 6), Iara, Kala\n"
+            "**Daily Temple Express**\n"
+            "- Daily TempleShrine\n"
+            "  - Left Dungeon, Right Dungeon, Middle Dungeon\n"
+            "**Ultra Gramiel Express**\n"
+            "- Ultra Gramiel\n\n"
+            "## ℹ️ How it works\n"
+            "- Select a \"ticket type\"\n"
+            "- Fill out the form\n"
+            "- Helpers join\n"
+            "- Get help in your private ticket"
         )
         message = await ctx.respond(embed=embed, view=view)
         
@@ -503,11 +561,21 @@ class TicketModule(commands.Cog):
             return
         channel_id = interaction.channel.id
         ticket_info = active_tickets.get(channel_id)
-        if not ticket_info:
-            return
+        # Panel buttons are outside ticket channels
 
         custom_id = interaction.data["custom_id"]
 
+        # Handle panel category buttons
+        if custom_id.startswith("open_ticket::"):
+            category_name = custom_id.split("::", 1)[1]
+            cat_data = await db.get_category(category_name)
+            if not cat_data:
+                cat_data = get_fallback_category(category_name)
+            await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
+            return
+
+        if not ticket_info:
+            return
         if custom_id == "join_ticket":
             if interaction.user.id == ticket_info["requestor"]:
                 await interaction.response.send_message("You cannot join your own ticket.", ephemeral=True)
@@ -597,7 +665,7 @@ class TicketModule(commands.Cog):
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
-                # 1st close: only remove helpers' channel access (keep staff/admin)
+                # 1st close: remove helpers and requestor access; keep staff/admin only
                 helpers = [h for h in ticket_info["helpers"] if h]
                 # Revoke helper role view access for the channel
                 helper_role_id = roles_cfg.get("helper") if roles_cfg else None
@@ -622,9 +690,32 @@ class TicketModule(commands.Cog):
                             await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
                     except Exception:
                         pass
+                # Revoke requestor access too
+                try:
+                    requestor_member = interaction.guild.get_member(ticket_info["requestor"]) if ticket_info.get("requestor") else None
+                    if requestor_member:
+                        await interaction.channel.set_permissions(requestor_member, view_channel=False, send_messages=False)
+                except Exception:
+                    pass
                 ticket_info["closed_stage"] = 1
                 await interaction.response.send_message("Helpers removed from channel. Click again to choose reward.", ephemeral=True)
             elif stage == 1:
+                # Only staff/admin can decide rewards
+                roles_cfg = await db.get_roles()
+                staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+                admin_role_id = roles_cfg.get("admin") if roles_cfg else None
+                is_staff = interaction.user.guild_permissions.administrator
+                if admin_role_id:
+                    is_staff = is_staff or any(r.id == admin_role_id for r in interaction.user.roles)
+                if staff_role_id:
+                    is_staff = is_staff or any(r.id == staff_role_id for r in interaction.user.roles)
+                if not is_staff:
+                    await interaction.response.send_message("Only staff/admin can decide rewards.", ephemeral=True)
+                    return
+                # Prevent double reward prompt if already decided
+                if ticket_info.get("rewarded") is not None:
+                    await interaction.response.send_message("Reward decision already made.", ephemeral=True)
+                    return
                 view = RewardChoiceView(interaction.channel.id)
                 await interaction.response.send_message("Reward helpers?", view=view, ephemeral=True)
             else:
