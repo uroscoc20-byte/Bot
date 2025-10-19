@@ -386,6 +386,10 @@ class TicketSelect(Select):
         cat_data = await db.get_category(category_name)
         if not cat_data:
             cat_data = get_fallback_category(category_name)
+        else:
+            # Force correct slot numbers from fallback configuration
+            fallback_slots = DEFAULT_HELPER_SLOTS.get(category_name, DEFAULT_SLOTS)
+            cat_data["slots"] = fallback_slots
         await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
 
 class TicketPanelView(View):
@@ -625,8 +629,13 @@ class TicketModule(commands.Cog):
                 if not cat_data:
                     cat_data = get_fallback_category(category_name)
                     logger.info(f"Using fallback category for: {category_name}")
+                else:
+                    # Force correct slot numbers from fallback configuration
+                    fallback_slots = DEFAULT_HELPER_SLOTS.get(category_name, DEFAULT_SLOTS)
+                    cat_data["slots"] = fallback_slots
+                    logger.info(f"Using database category for: {category_name}, forced slots: {fallback_slots}")
                 
-                logger.info(f"Sending modal for category: {category_name}")
+                logger.info(f"Sending modal for category: {category_name}, slots: {cat_data['slots']}")
                 await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
                 return
             except Exception as e:
