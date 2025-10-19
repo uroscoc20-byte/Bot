@@ -371,8 +371,8 @@ class TicketView(View):
         super().__init__(timeout=None)
         self.category = category
         self.requestor_id = requestor_id
-        self.add_item(Button(label="Join", style=discord.ButtonStyle.success, custom_id="join_ticket", emoji="➕"))
-        self.add_item(Button(label="Close", style=discord.ButtonStyle.danger, custom_id="close_ticket", emoji="🔒"))
+        self.add_item(Button(label="Join", style=discord.ButtonStyle.green, custom_id="join_ticket", emoji="➕"))
+        self.add_item(Button(label="Close", style=discord.ButtonStyle.red, custom_id="close_ticket", emoji="🔒"))
 
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
