@@ -26,6 +26,16 @@ async def on_ready():
         if hasattr(bot, "sync_commands"):
             await bot.sync_commands()
         print("✅ Slash commands synced.")
+        
+        # Restore persistent panels
+        try:
+            persistent_panels_cog = bot.get_cog("PersistentPanels")
+            if persistent_panels_cog:
+                await persistent_panels_cog.restore_persistent_panels()
+                print("✅ Persistent panels restored.")
+        except Exception as e:
+            print(f"❌ Failed to restore persistent panels: {e}")
+            
     except Exception as e:
         print(f"❌ Slash command sync failed: {e}")
 
@@ -38,6 +48,7 @@ initial_extensions = [
     "custom_simple",  # manage !custom text commands and edit via modal
     "audit_log",      # log slash and prefix commands
     "verification",   # verification panel/tickets
+    "persistent_panels",  # persistent panels with auto-refresh
     "bot_speak"  # optional
 ]
 

@@ -121,6 +121,16 @@ class Database:
             channel_id INTEGER
         )
         """)
+        await self.db.execute("""
+        CREATE TABLE IF NOT EXISTS persistent_panels (
+            id INTEGER PRIMARY KEY,
+            channel_id INTEGER,
+            message_id INTEGER,
+            panel_type TEXT,
+            data TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
         await self.db.commit()
 
     async def _fs_run(self, func):
@@ -464,6 +474,82 @@ class Database:
         )
         await self.db.commit()
         return last
+
+    # ---------- PERSISTENT PANELS ----------
+    async def save_persistent_panel(self, channel_id, message_id, panel_type, data):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("persistent_panels").document(str(message_id)).set({
+                        "channel_id": int(channel_id),
+                        "message_id": int(message_id),
+                        "panel_type": panel_type,
+                        "data": json.dumps(data),
+                        "created_at": None
+                    })
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        data_json = json.dumps(data)
+        await self.db.execute(
+            "INSERT INTO persistent_panels(channel_id, message_id, panel_type, data) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(message_id) DO UPDATE SET data=excluded.data",
+            (channel_id, message_id, panel_type, data_json)
+        )
+        await self.db.commit()
+
+    async def get_persistent_panels(self, panel_type=None):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    query = self.fs.collection("persistent_panels")
+                    if panel_type:
+                        query = query.where("panel_type", "==", panel_type)
+                    docs = query.stream()
+                    panels = []
+                    for d in docs:
+                        data = d.to_dict() or {}
+                        panels.append({
+                            "channel_id": int(data.get("channel_id", 0)),
+                            "message_id": int(data.get("message_id", 0)),
+                            "panel_type": data.get("panel_type", ""),
+                            "data": json.loads(data.get("data", "{}"))
+                        })
+                    return panels
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        if panel_type:
+            async with self.db.execute(
+                "SELECT channel_id, message_id, panel_type, data FROM persistent_panels WHERE panel_type = ?",
+                (panel_type,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+        else:
+            async with self.db.execute(
+                "SELECT channel_id, message_id, panel_type, data FROM persistent_panels"
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [
+            {
+                "channel_id": row[0],
+                "message_id": row[1],
+                "panel_type": row[2],
+                "data": json.loads(row[3])
+            }
+            for row in rows
+        ]
+
+    async def delete_persistent_panel(self, message_id):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("persistent_panels").document(str(message_id)).delete()
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        await self.db.execute("DELETE FROM persistent_panels WHERE message_id = ?", (message_id,))
+        await self.db.commit()
 
 
 db = Database()
