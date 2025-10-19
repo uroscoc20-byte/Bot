@@ -49,7 +49,8 @@ initial_extensions = [
     "audit_log",      # log slash and prefix commands
     "verification",   # verification panel/tickets
     "persistent_panels",  # persistent panels with auto-refresh
-    "bot_speak"  # optional
+    "bot_speak",  # optional
+    "guild_control"  # home guild enforcement and leave commands
 ]
 
 # ---------- ASYNC MAIN ----------
