@@ -42,14 +42,86 @@ class PointsModule(commands.Cog):
         page: discord.Option(int, "Page number", required=False, default=1),
     ):
         rows = await db.get_leaderboard()
-        per_page = 10
+        per_page = 15
         total_pages = max(1, (len(rows) + per_page - 1) // per_page)
         if not rows:
             await ctx.respond("Leaderboard is empty.")
             return
         embed = await create_leaderboard_embed(page=page, per_page=per_page)
-        view = LeaderboardView(page, total_pages, per_page)
+        view = LeaderboardView()
         await ctx.respond(embed=embed, view=view)
+
+    @commands.slash_command(name="leaderboard_refresh", description="Refresh the leaderboard message (admin/staff only)")
+    async def leaderboard_refresh(self, ctx: discord.ApplicationContext):
+        roles = await db.get_roles()
+        staff_id = roles.get("staff") if roles else None
+        admin_id = roles.get("admin") if roles else None
+        is_allowed = ctx.user.guild_permissions.administrator or (admin_id and any(r.id == admin_id for r in ctx.user.roles)) or (staff_id and any(r.id == staff_id for r in ctx.user.roles))
+        if not is_allowed:
+            await ctx.respond("You don't have permission to refresh the leaderboard.", ephemeral=True)
+            return
+
+        # Try to delete old leaderboard embeds in channel and send a fresh one
+        deleted = 0
+        try:
+            async for msg in ctx.channel.history(limit=200):
+                if msg.author.id != ctx.bot.user.id:
+                    continue
+                if msg.embeds and msg.embeds[0].title and "Leaderboard" in msg.embeds[0].title:
+                    try:
+                        await msg.delete()
+                        deleted += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        rows = await db.get_leaderboard()
+        if not rows:
+            await ctx.respond("Leaderboard is empty.")
+            return
+        embed = await create_leaderboard_embed(page=1, per_page=15)
+        view = LeaderboardView()
+        await ctx.respond(f"Refreshed leaderboard (removed {deleted} old).", ephemeral=True)
+        await ctx.channel.send(embed=embed, view=view)
+
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.type != discord.InteractionType.component:
+            return
+        custom_id = interaction.data.get("custom_id") if interaction.data else None
+        if custom_id not in {"lb_prev", "lb_next"}:
+            return
+
+        # If the original view already handled it, skip
+        if interaction.response.is_done():
+            return
+
+        msg = interaction.message
+        embed = msg.embeds[0] if msg and msg.embeds else None
+        if not embed:
+            await interaction.response.defer()
+            return
+
+        footer = (embed.footer.text or "") if embed.footer else ""
+        import re
+        m = re.search(r"(\d+)\s*/\s*(\d+)", footer)
+        try:
+            current_page = int(m.group(1)) if m else 1
+            total_pages = int(m.group(2)) if m else 1
+        except Exception:
+            current_page, total_pages = 1, 1
+
+        if custom_id == "lb_prev" and current_page <= 1:
+            await interaction.response.defer()
+            return
+        if custom_id == "lb_next" and current_page >= total_pages:
+            await interaction.response.defer()
+            return
+
+        target_page = current_page - 1 if custom_id == "lb_prev" else current_page + 1
+        embed = await create_leaderboard_embed(page=target_page, per_page=15)
+        await interaction.response.edit_message(embed=embed, view=LeaderboardView())
 
     @commands.slash_command(name="points_reset", description="Reset all points (Admin only)")
     async def points_reset(self, ctx: discord.ApplicationContext):
