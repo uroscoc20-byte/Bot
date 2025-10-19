@@ -338,9 +338,12 @@ class RewardChoiceView(View):
 class TicketSelect(Select):
     def __init__(self, categories):
         options = [discord.SelectOption(label=cat["name"]) for cat in categories]
-        super().__init__(placeholder="Choose ticket type...", min_values=1, max_values=1, options=options)
+        # Provide a stable custom_id so it works after bot restarts
+        super().__init__(placeholder="Choose ticket type...", min_values=1, max_values=1, options=options, custom_id="ticket_select")
 
     async def callback(self, interaction: discord.Interaction):
+        # This callback continues to work while the process is alive.
+        # After a restart, on_interaction handler below ensures persistence.
         member_role_ids = [role.id for role in interaction.user.roles]
         roles_cfg = await db.get_roles()
         restricted_raw = roles_cfg.get("restricted", []) if roles_cfg else []
@@ -486,6 +489,45 @@ class TicketModule(commands.Cog):
         channel_id = interaction.channel.id
         ticket_info = active_tickets.get(channel_id)
         if not ticket_info:
+            # Not a ticket channel; still handle panel select interactions persistently
+            custom_id = interaction.data.get("custom_id") if interaction.data else None
+            if custom_id == "ticket_select":
+                try:
+                    # Permission checks
+                    member_role_ids = [role.id for role in interaction.user.roles]
+                    roles_cfg = await db.get_roles()
+                    restricted_raw = roles_cfg.get("restricted", []) if roles_cfg else []
+                    restricted_ids = []
+                    for r in restricted_raw:
+                        try:
+                            restricted_ids.append(int(r))
+                        except Exception:
+                            pass
+                    if any(rid in member_role_ids for rid in restricted_ids):
+                        await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
+                        return
+
+                    if not bot_can_manage_channels(interaction):
+                        await interaction.response.send_message(
+                            "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
+                            ephemeral=True,
+                        )
+                        return
+
+                    values = interaction.data.get("values") if interaction.data else None
+                    category_name = (values or [None])[0]
+                    if not category_name:
+                        await interaction.response.send_message("Invalid selection.", ephemeral=True)
+                        return
+                    cat_data = await db.get_category(category_name)
+                    if not cat_data:
+                        cat_data = get_fallback_category(category_name)
+                    await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
+                except Exception:
+                    try:
+                        await interaction.response.send_message("An error occurred handling your selection.", ephemeral=True)
+                    except Exception:
+                        pass
             return
 
         custom_id = interaction.data["custom_id"]

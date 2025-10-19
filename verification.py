@@ -146,5 +146,27 @@ class VerificationModule(commands.Cog):
         view = VerificationPanelView(category_id)
         await ctx.respond(embed=embed, view=view)
 
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        # Ensure verify panel button works across restarts via custom_id
+        if interaction.type != discord.InteractionType.component:
+            return
+        data = getattr(interaction, "data", None) or {}
+        custom_id = data.get("custom_id")
+        if custom_id != "verify_open":
+            return
+        try:
+            cfg = await db.load_config("verification_category")
+            category_id = (cfg or {}).get("id")
+        except Exception:
+            category_id = None
+        try:
+            await interaction.response.send_modal(VerificationModal(category_id))
+        except Exception:
+            try:
+                await interaction.response.send_message("Unable to open verification modal right now.", ephemeral=True)
+            except Exception:
+                pass
+
 def setup(bot):
     bot.add_cog(VerificationModule(bot))

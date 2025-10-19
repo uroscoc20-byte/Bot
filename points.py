@@ -48,8 +48,38 @@ class PointsModule(commands.Cog):
             await ctx.respond("Leaderboard is empty.")
             return
         embed = await create_leaderboard_embed(page=page, per_page=per_page)
-        view = LeaderboardView(page, total_pages, per_page)
-        await ctx.respond(embed=embed, view=view)
+        view = LeaderboardView(per_page)
+        # Initialize button disabled state for the first render
+        try:
+            view._sync_buttons(page, total_pages)
+        except Exception:
+            pass
+        msg = None
+        try:
+            msg = await ctx.respond(embed=embed, view=view)
+        except Exception:
+            # Some impls return no message from respond(); try original_response
+            await ctx.respond(embed=embed, view=view)
+        # Attempt to record the message for auto-refresh maintenance
+        try:
+            # For libraries that support retrieving original response
+            if hasattr(ctx, "interaction") and hasattr(ctx.interaction, "original_response"):
+                try:
+                    msg = await ctx.interaction.original_response()
+                except Exception:
+                    pass
+            if msg is not None and hasattr(msg, "id"):
+                data = await db.load_config("leaderboard_messages") or []
+                # Ensure structure is a list of dicts
+                if not isinstance(data, list):
+                    data = []
+                entry = {"channel_id": getattr(msg.channel, "id", None), "message_id": msg.id}
+                if entry["channel_id"] and entry not in data:
+                    data.append(entry)
+                    await db.save_config("leaderboard_messages", data)
+        except Exception:
+            # Non-fatal if we can't record
+            pass
 
     @commands.slash_command(name="points_reset", description="Reset all points (Admin only)")
     async def points_reset(self, ctx: discord.ApplicationContext):
