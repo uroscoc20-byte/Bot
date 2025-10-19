@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Select, Modal, InputText
+import asyncio
 import logging
 from points import PointsModule
 from database import db
@@ -338,7 +339,7 @@ class RewardChoiceView(View):
 class TicketSelect(Select):
     def __init__(self, categories):
         options = [discord.SelectOption(label=cat["name"]) for cat in categories]
-        super().__init__(placeholder="Choose ticket type...", min_values=1, max_values=1, options=options)
+        super().__init__(placeholder="Choose ticket type...", min_values=1, max_values=1, options=options, custom_id="ticket_select")
 
     async def callback(self, interaction: discord.Interaction):
         member_role_ids = [role.id for role in interaction.user.roles]
@@ -376,6 +377,7 @@ class TicketPanelView(View):
 class TicketModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._panel_autorefresh_task = self.bot.loop.create_task(self._panel_autorefresh_loop())
 
     @commands.slash_command(name="panel", description="Deploy ticket panel (staff/admin only)")
     async def panel(self, ctx: discord.ApplicationContext):
@@ -426,6 +428,37 @@ class TicketModule(commands.Cog):
             inline=False,
         )
         await ctx.respond(embed=embed, view=view)
+        # Track panel message to enable auto-refresh and cleanup
+        try:
+            msg = await ctx.interaction.original_message()
+            await self._track_panel_message(ctx.channel, msg)
+        except Exception:
+            pass
+
+    async def _track_panel_message(self, channel: discord.TextChannel, message: discord.Message):
+        try:
+            keep_last = 1
+            mapping = await db.load_config("panel_message_ids") or {}
+            key = str(int(channel.id))
+            ids = [int(x) for x in (mapping.get(key) or [])]
+            ids.append(int(message.id))
+            # keep a short history window to allow deletion attempts
+            ids = ids[-max(keep_last + 2, 3):]
+            mapping[key] = ids
+            await db.save_config("panel_message_ids", mapping)
+            # delete older messages beyond keep_last
+            old_to_delete = ids[:-keep_last]
+            for mid in old_to_delete:
+                try:
+                    old = await channel.fetch_message(int(mid))
+                    await old.delete()
+                except Exception:
+                    pass
+            # update mapping to reflect deletions
+            mapping[key] = ids[-keep_last:]
+            await db.save_config("panel_message_ids", mapping)
+        except Exception:
+            pass
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
     async def ticket_kick(
@@ -483,12 +516,52 @@ class TicketModule(commands.Cog):
     async def on_interaction(self, interaction: discord.Interaction):
         if interaction.type != discord.InteractionType.component:
             return
+        data = interaction.data or {}
+        custom_id = data.get("custom_id")
+
+        # Handle panel select persistently
+        if custom_id == "ticket_select":
+            try:
+                member_role_ids = [role.id for role in interaction.user.roles]
+                roles_cfg = await db.get_roles()
+                restricted_raw = roles_cfg.get("restricted", []) if roles_cfg else []
+                restricted_ids = []
+                for r in restricted_raw:
+                    try:
+                        restricted_ids.append(int(r))
+                    except Exception:
+                        pass
+                if any(rid in member_role_ids for rid in restricted_ids):
+                    await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
+                    return
+
+                if not bot_can_manage_channels(interaction):
+                    await interaction.response.send_message(
+                        "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
+                        ephemeral=True,
+                    )
+                    return
+
+                values = data.get("values") or []
+                category_name = values[0] if values else None
+                if not category_name:
+                    await interaction.response.send_message("No category selected.", ephemeral=True)
+                    return
+                cat_data = await db.get_category(category_name)
+                if not cat_data:
+                    cat_data = get_fallback_category(category_name)
+                await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
+            except Exception:
+                try:
+                    await interaction.response.defer()
+                except Exception:
+                    pass
+            return
+
         channel_id = interaction.channel.id
         ticket_info = active_tickets.get(channel_id)
         if not ticket_info:
             return
-
-        custom_id = interaction.data["custom_id"]
 
         if custom_id == "join_ticket":
             if interaction.user.id == ticket_info["requestor"]:
@@ -616,6 +689,54 @@ class TicketModule(commands.Cog):
                     await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
                 except Exception:
                     pass
+
+    async def _panel_autorefresh_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
+                cfg = await db.load_config("panel_autorefresh") or {}
+                enabled = bool(cfg.get("enabled", False))
+                interval_minutes = int(cfg.get("interval_minutes", 720))
+                interval_seconds = max(300, interval_minutes * 60)
+                if not enabled:
+                    await asyncio.sleep(300)
+                    continue
+                mapping = await db.load_config("panel_message_ids") or {}
+                categories = await db.get_categories()
+                if not categories:
+                    categories = [{
+                        "name": name,
+                        "questions": DEFAULT_QUESTIONS,
+                        "points": DEFAULT_POINT_VALUES[name],
+                        "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
+                    } for name in DEFAULT_POINT_VALUES.keys()]
+                panel_cfg = await db.get_panel_config()
+                for channel_key, ids in list(mapping.items()):
+                    try:
+                        channel_id = int(channel_key)
+                        channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+                        if not channel or not isinstance(channel, (discord.TextChannel, discord.Thread)):
+                            continue
+                        view = TicketPanelView(categories)
+                        embed = discord.Embed(
+                            title="🎮 In-game Assistance",
+                            description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
+                            color=panel_cfg.get("color", 0x5865F2),
+                        )
+                        services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
+                        embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
+                        embed.add_field(
+                            name="ℹ️ How it works",
+                            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
+                            inline=False,
+                        )
+                        msg = await channel.send(embed=embed, view=view)
+                        await self._track_panel_message(channel, msg)
+                    except Exception:
+                        continue
+                await asyncio.sleep(interval_seconds)
+            except Exception:
+                await asyncio.sleep(300)
 
 def setup(bot):
     bot.add_cog(TicketModule(bot))

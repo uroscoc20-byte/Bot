@@ -145,6 +145,22 @@ class VerificationModule(commands.Cog):
         )
         view = VerificationPanelView(category_id)
         await ctx.respond(embed=embed, view=view)
+        # Track verification panel for optional auto-refresh
+        try:
+            msg = await ctx.interaction.original_message()
+            mapping = await db.load_config("verification_panel_message_ids") or {}
+            key = str(int(ctx.channel.id))
+            ids = [int(x) for x in (mapping.get(key) or [])]
+            ids.append(int(msg.id))
+            mapping[key] = ids[-3:]
+            await db.save_config("verification_panel_message_ids", mapping)
+        except Exception:
+            pass
 
 def setup(bot):
     bot.add_cog(VerificationModule(bot))
+    # Persistent view so Verify button remains active across restarts
+    try:
+        bot.add_view(VerificationPanelView(category_id=None))
+    except Exception:
+        pass

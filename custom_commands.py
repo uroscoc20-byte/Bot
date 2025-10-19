@@ -93,7 +93,7 @@ class CustomCommandsModule(commands.Cog):
                 "`/setup_roles` — Configure roles (admin)\n"
                 "`/setup_roles_show` — Show current roles\n"
                 "`/setup_transcript` — Set transcript channel\n"
-                "`/setup_panel` — Customize panel text/color\n"
+                "`/setup_panel` — Customize panel text/color and enable auto-refresh\n"
                 "`/setup_maintenance` — Toggle ticket availability\n"
                 "`/setup_category_add|remove|list` — Manage categories\n"
                 "`/custom_add|custom_remove|custom_list` — Manage custom slash commands\n"

@@ -1,9 +1,13 @@
+import re
 import discord
 from database import db
 
 ACCENT = 0x5865F2
 
-async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord.Embed:
+# Increase default page size to make the leaderboard "bigger"
+LEADERBOARD_PAGE_SIZE = 15
+
+async def create_leaderboard_embed(page: int = 1, per_page: int = LEADERBOARD_PAGE_SIZE) -> discord.Embed:
     rows = await db.get_leaderboard()
     sorted_points = sorted(rows, key=lambda x: x[1], reverse=True)
     total_pages = max(1, (len(sorted_points) + per_page - 1) // per_page)
@@ -21,7 +25,7 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord
 
     description = "\n".join(lines) if lines else "No entries yet."
     embed = discord.Embed(
-        title="🏆 Points Leaderboard",
+        title="Helper's Leaderboard Season 7",
         description=description,
         color=ACCENT,
     )
@@ -30,37 +34,64 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord
 
 
 class LeaderboardView(discord.ui.View):
-    def __init__(self, current_page: int, total_pages: int, per_page: int):
-        super().__init__(timeout=120)
-        self.current_page = current_page
-        self.total_pages = max(1, total_pages)
-        self.per_page = per_page
-        self._sync_buttons()
+    def __init__(self):
+        # Persistent, stateless view so buttons keep working indefinitely
+        super().__init__(timeout=None)
 
-    def _sync_buttons(self):
+    @staticmethod
+    def _parse_page_info(text: str) -> tuple[int, int] | tuple[None, None]:
+        if not text:
+            return None, None
+        try:
+            m = re.search(r"Page\s+(\d+)\s*/\s*(\d+)", text)
+            if not m:
+                return None, None
+            return int(m.group(1)), int(m.group(2))
+        except Exception:
+            return None, None
+
+    def _sync_buttons_with_page(self, page: int, total_pages: int):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 if child.custom_id == "lb_prev":
-                    child.disabled = self.current_page <= 1
+                    child.disabled = page <= 1
                 elif child.custom_id == "lb_next":
-                    child.disabled = self.current_page >= self.total_pages
+                    child.disabled = page >= total_pages
 
-    @discord.ui.button(style=discord.ButtonStyle.gray, emoji="◀️", custom_id="lb_prev")
+    @discord.ui.button(style=discord.ButtonStyle.primary, emoji="◀️", custom_id="lb_prev")
     async def prev_page(self, button: discord.ui.Button, interaction: discord.Interaction):
-        if self.current_page <= 1:
-            await interaction.response.defer()
-            return
-        self.current_page -= 1
-        embed = await create_leaderboard_embed(self.current_page, self.per_page)
-        self._sync_buttons()
-        await interaction.response.edit_message(embed=embed, view=self)
+        try:
+            msg = interaction.message
+            embed = msg.embeds[0] if msg and msg.embeds else None
+            page, total_pages = self._parse_page_info(embed.footer.text if embed and embed.footer else "")
+            if not page or page <= 1:
+                await interaction.response.defer()
+                return
+            new_page = max(1, page - 1)
+            new_embed = await create_leaderboard_embed(new_page, LEADERBOARD_PAGE_SIZE)
+            self._sync_buttons_with_page(new_page, int(new_embed.footer.text.split("/")[-1]))
+            await interaction.response.edit_message(embed=new_embed, view=self)
+        except Exception:
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
 
-    @discord.ui.button(style=discord.ButtonStyle.gray, emoji="▶️", custom_id="lb_next")
+    @discord.ui.button(style=discord.ButtonStyle.primary, emoji="▶️", custom_id="lb_next")
     async def next_page(self, button: discord.ui.Button, interaction: discord.Interaction):
-        if self.current_page >= self.total_pages:
-            await interaction.response.defer()
-            return
-        self.current_page += 1
-        embed = await create_leaderboard_embed(self.current_page, self.per_page)
-        self._sync_buttons()
-        await interaction.response.edit_message(embed=embed, view=self)
+        try:
+            msg = interaction.message
+            embed = msg.embeds[0] if msg and msg.embeds else None
+            page, total_pages = self._parse_page_info(embed.footer.text if embed and embed.footer else "")
+            if not page or not total_pages or page >= total_pages:
+                await interaction.response.defer()
+                return
+            new_page = min(total_pages, page + 1)
+            new_embed = await create_leaderboard_embed(new_page, LEADERBOARD_PAGE_SIZE)
+            self._sync_buttons_with_page(new_page, int(new_embed.footer.text.split("/")[-1]))
+            await interaction.response.edit_message(embed=new_embed, view=self)
+        except Exception:
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass

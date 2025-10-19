@@ -176,6 +176,13 @@ class Database:
             color = 0x7289DA
         return {"text": text, "color": color}
 
+    async def set_panel_autorefresh(self, enabled: bool, interval_minutes: int):
+        await self.save_config("panel_autorefresh", {"enabled": bool(enabled), "interval_minutes": int(interval_minutes)})
+
+    async def get_panel_autorefresh(self):
+        data = await self.load_config("panel_autorefresh") or {}
+        return {"enabled": bool(data.get("enabled", False)), "interval_minutes": int(data.get("interval_minutes", 720))}
+
     async def set_maintenance(self, enabled: bool, message: str = None):
         await self.save_config("maintenance", {"enabled": enabled, "message": message or "Tickets are temporarily disabled."})
 

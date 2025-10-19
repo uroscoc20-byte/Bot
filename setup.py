@@ -32,6 +32,38 @@ class SetupModule(commands.Cog):
         await db.set_transcript_channel(channel.id)
         await ctx.respond(f"✅ Transcript channel set to {channel.mention}")
 
+    @commands.slash_command(name="setup_panel", description="Customize panel text/color and auto-refresh (Admin only)")
+    async def setup_panel(
+        self,
+        ctx: discord.ApplicationContext,
+        text: discord.Option(str, "Panel description text", required=False),
+        color_hex: discord.Option(str, "Color hex like #5865F2", required=False),
+        auto_refresh_enabled: discord.Option(bool, "Enable periodic re-posting?", required=False),
+        auto_refresh_minutes: discord.Option(int, "Minutes between refresh (>=5)", required=False),
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You are not allowed to run this.", ephemeral=True)
+            return
+        try:
+            color_val = None
+            if color_hex:
+                raw = color_hex.strip().lstrip("#")
+                color_val = int(raw, 16)
+            if text is not None or color_val is not None:
+                await db.set_panel_config(text=text, color=color_val)
+            if auto_refresh_enabled is not None or auto_refresh_minutes is not None:
+                minutes = max(5, (auto_refresh_minutes if auto_refresh_minutes is not None else 720))
+                await db.set_panel_autorefresh(bool(auto_refresh_enabled) if auto_refresh_enabled is not None else False, minutes)
+            cfg = await db.get_panel_config()
+            arcfg = await db.get_panel_autorefresh()
+            embed = discord.Embed(title="✅ Panel configuration updated", color=cfg.get("color", 0x5865F2))
+            embed.add_field(name="Text", value=cfg.get("text") or "—", inline=False)
+            embed.add_field(name="Color", value=f"#{cfg.get('color', 0x5865F2):06X}")
+            embed.add_field(name="Auto-refresh", value=f"Enabled: {arcfg['enabled']} / Every {arcfg['interval_minutes']} min")
+            await ctx.respond(embed=embed, ephemeral=True)
+        except Exception as e:
+            await ctx.respond(f"Failed to update panel settings: {e}", ephemeral=True)
+
     @commands.slash_command(name="setup_audit_channel", description="Set audit log channel (Admin only)")
     async def setup_audit_channel(
         self, ctx: discord.ApplicationContext,
