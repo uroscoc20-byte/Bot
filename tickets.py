@@ -13,11 +13,14 @@ logger = logging.getLogger(__name__)
 # ---------- DEFAULTS ----------
 DEFAULT_POINT_VALUES = {
     "Ultra Speaker Express": 8,
+    "UltraSpeaker Express": 8,  # Match panel name
     "Ultra Gramiel Express": 7,
     "4-Man Ultra Daily Express": 4,
+    "Daily 4-Man Express": 4,  # Match panel name
     "7-Man Ultra Daily Express": 10,
     "Daily 7-Man Express": 10,  # Match panel name
     "Ultra Weekly Express": 12,
+    "Weekly Ultra Express": 12,  # Match panel name
     "Grim Express": 10,
     "GrimChallenge Express": 10,  # Match panel name
     "Daily Temple Express": 6,
@@ -325,10 +328,17 @@ class RewardChoiceView(View):
         try:
             category = ticket_info["category"]
             cat_data = await db.get_category(category)
-            points_value = (cat_data or get_fallback_category(category))["points"]
+            fallback_data = get_fallback_category(category)
+            points_value = (cat_data or fallback_data)["points"]
             
-            logger.info(f"Rewarding helpers for {category} ticket with {points_value} points each")
+            logger.info(f"Rewarding helpers for '{category}' ticket")
+            logger.info(f"Database category data: {cat_data}")
+            logger.info(f"Fallback category data: {fallback_data}")
+            logger.info(f"Final points value: {points_value}")
             logger.info(f"Helpers to reward: {[h for h in ticket_info.get('helpers', []) if h]}")
+            
+            if points_value == 0:
+                logger.warning(f"Points value is 0 for category '{category}' - this might be a configuration issue")
             
             await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
             await generate_ticket_transcript(ticket_info, rewarded=True)
