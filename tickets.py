@@ -481,12 +481,22 @@ class TicketModule(commands.Cog):
 
         categories = await db.get_categories()
         if not categories:
+            # Use the exact category names from the panel text
+            panel_categories = [
+                "UltraSpeaker Express",
+                "Ultra Gramiel Express", 
+                "Daily 4-Man Express",
+                "Daily 7-Man Express",
+                "Weekly Ultra Express",
+                "GrimChallenge Express",
+                "Daily Temple Express"
+            ]
             categories = [{
                 "name": name,
                 "questions": DEFAULT_QUESTIONS,
-                "points": DEFAULT_POINT_VALUES[name],
+                "points": DEFAULT_POINT_VALUES.get(name, 5),
                 "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
-            } for name in DEFAULT_POINT_VALUES.keys()]
+            } for name in panel_categories]
         panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
         embed = discord.Embed(
@@ -497,57 +507,30 @@ class TicketModule(commands.Cog):
         # Custom panel content per request
         embed.clear_fields()
         embed.description = (
-            "## Ticket types\n"
-            "**GrimChallenge Express**\n"
-            "- Mechabinky & Raxborg 2.0\n"
+            "# CHOOSE YOUR TICKET TYPE🚂 💨 \n"
+            "**Pick the ticket type that fits your request📜 **\n"
+            "- https://discord.com/channels/1345073229026562079/1358536986679443496\n"
+            "------------------------------------------------------------\n"
             "**UltraSpeaker Express**\n"
-            "- The First Speaker\n"
-            "**Weekly Ultra Express**\n"
-            "- Weekly Ultra Bosses\n"
-            "  - Darkon, Drakath, Dage, Nulgath, Drago\n"
-            "**Daily 7-Man Express**\n"
-            "- Daily 7-Man Ultra Bosses\n"
-            "  - Astralshrine, KathoolDepths, Originul, ApexAzalith, Lich Lord/Beast/Deimos (Daily Exercises 2 through 4), Lavarockshore\n"
-            "**Daily 4-Man Express**\n"
-            "- Daily 4-Man Ultra Bosses\n"
-            "  - Ezrajal, Warden, Engineer, Tyndarius, Dage (Daily Exercise 6), Iara, Kala\n"
-            "**Daily Temple Express**\n"
-            "- Daily TempleShrine\n"
-            "  - Left Dungeon, Right Dungeon, Middle Dungeon\n"
+            "-# - The First Speaker\n"
             "**Ultra Gramiel Express**\n"
-            "- Ultra Gramiel\n\n"
-            "## ℹ️ How it works\n"
-            "- Select a \"ticket type\"\n"
-            "- Fill out the form\n"
-            "- Helpers join\n"
-            "- Get help in your private ticket"
-        )
-        embed.clear_fields()
-        embed.description = (
-            "## Ticket types\n"
+            "-# - Ultra Gramiel\n"
+            "**Daily 4-Man Express**\n"
+            "-# - Daily 4-Man Ultra Bosses\n"
+            "**Daily 7-Man Express**\n"
+            "-# - Daily 7-Man Ultra Bosses\n"
+            "**Weekly Ultra Express**\n"
+            "-# - Weekly Ultra Bosses (excluding speaker, grim and gramiel)\n"
             "**GrimChallenge Express**\n"
-            "- Mechabinky & Raxborg 2.0\n"
-            "**UltraSpeaker Express**\n"
-            "- The First Speaker\n"
-            "**Weekly Ultra Express**\n"
-            "- Weekly Ultra Bosses\n"
-            "  - Darkon, Drakath, Dage, Nulgath, Drago\n"
-            "**Daily 7-Man Express**\n"
-            "- Daily 7-Man Ultra Bosses\n"
-            "  - Astralshrine, KathoolDepths, Originul, ApexAzalith, Lich Lord/Beast/Deimos (Daily Exercises 2 through 4), Lavarockshore\n"
-            "**Daily 4-Man Express**\n"
-            "- Daily 4-Man Ultra Bosses\n"
-            "  - Ezrajal, Warden, Engineer, Tyndarius, Dage (Daily Exercise 6), Iara, Kala\n"
+            "-# - Mechabinky & Raxborg 2.0\n"
             "**Daily Temple Express**\n"
-            "- Daily TempleShrine\n"
-            "  - Left Dungeon, Right Dungeon, Middle Dungeon\n"
-            "**Ultra Gramiel Express**\n"
-            "- Ultra Gramiel\n\n"
-            "## ℹ️ How it works\n"
-            "- Select a \"ticket type\"\n"
-            "- Fill out the form\n"
-            "- Helpers join\n"
-            "- Get help in your private ticket"
+            "-# - Daily TempleShrine\n"
+            "-----------------------------------------------------------\n"
+            "## How it works📢 \n"
+            "- ✅ Select a \"ticket type\"\n"
+            "- 📝 Fill out the form\n"
+            "- 💁 Helpers join\n"
+            "- 🎉 Get help in your private ticket"
         )
         message = await ctx.respond(embed=embed, view=view)
         
