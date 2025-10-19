@@ -371,8 +371,8 @@ class TicketView(View):
         super().__init__(timeout=None)
         self.category = category
         self.requestor_id = requestor_id
-        self.add_item(Button(label="Join", style=discord.ButtonStyle.danger, custom_id="join_ticket", emoji="<:URE:1429522388395233331>"))
-        self.add_item(Button(label="Close", style=discord.ButtonStyle.danger, custom_id="close_ticket", emoji="🧹"))
+        self.add_item(Button(label="Join", style=discord.ButtonStyle.secondary, custom_id="join_ticket", emoji="<:URE:1429522388395233331>"))
+        self.add_item(Button(label="Close", style=discord.ButtonStyle.secondary, custom_id="close_ticket", emoji="🧹"))
 
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
@@ -445,10 +445,10 @@ class TicketPanelView(View):
         for cat in categories[:25]:  # Discord max 25 buttons per view
             label = cat.get("name", "Category")
             custom_id = f"open_ticket::{label}"
-            # Custom dark red button with URE emoji
+            # Custom darker red button with URE emoji
             self.add_item(Button(
                 label=label, 
-                style=discord.ButtonStyle.danger, 
+                style=discord.ButtonStyle.secondary, 
                 custom_id=custom_id,
                 emoji="<:URE:1429522388395233331>"
             ))
@@ -627,12 +627,49 @@ class TicketModule(commands.Cog):
 
         # Handle panel category buttons
         if custom_id.startswith("open_ticket::"):
-            category_name = custom_id.split("::", 1)[1]
-            cat_data = await db.get_category(category_name)
-            if not cat_data:
-                cat_data = get_fallback_category(category_name)
-            await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
-            return
+            try:
+                category_name = custom_id.split("::", 1)[1]
+                logger.info(f"User {interaction.user} clicked ticket button for category: {category_name}")
+                
+                # Check for restricted roles
+                member_role_ids = [role.id for role in interaction.user.roles]
+                roles_cfg = await db.get_roles()
+                restricted_raw = roles_cfg.get("restricted", []) if roles_cfg else []
+                restricted_ids = []
+                for r in restricted_raw:
+                    try:
+                        restricted_ids.append(int(r))
+                    except Exception:
+                        pass
+                if any(rid in member_role_ids for rid in restricted_ids):
+                    logger.info(f"User {interaction.user} blocked by restricted role")
+                    await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
+                    return
+
+                # Check bot permissions
+                if not bot_can_manage_channels(interaction):
+                    logger.warning(f"Bot lacks manage channels permission in {interaction.guild}")
+                    await interaction.response.send_message(
+                        "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
+                        ephemeral=True,
+                    )
+                    return
+
+                cat_data = await db.get_category(category_name)
+                if not cat_data:
+                    cat_data = get_fallback_category(category_name)
+                    logger.info(f"Using fallback category for: {category_name}")
+                
+                logger.info(f"Sending modal for category: {category_name}")
+                await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
+                return
+            except Exception as e:
+                logger.exception(f"Error handling panel button click: {e}")
+                try:
+                    await interaction.response.send_message("⚠️ Something went wrong. Please try again.", ephemeral=True)
+                except Exception:
+                    pass
+                return
 
         if not ticket_info:
             return
