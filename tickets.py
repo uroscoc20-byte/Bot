@@ -175,8 +175,34 @@ class TicketModal(Modal):
                 color=0x00FF00,
             )
             embed.timestamp = datetime.utcnow()
+
+            # Collect answers for later ephemeral display to helpers
+            form_answers: dict[str, str] = {}
             for ti in self.inputs:
-                embed.add_field(name=ti.label, value=ti.value or "—", inline=False)
+                label_clean = (ti.label or "").strip()
+                value_text = (ti.value or "—").strip() or "—"
+                label_lower = label_clean.lower()
+
+                # Map known fields to canonical keys
+                if label_lower.startswith("in-game name") or label_lower.startswith("in game name"):
+                    form_answers["in_game_name"] = value_text
+                elif label_lower.startswith("server name"):
+                    form_answers["server_name"] = value_text
+                elif label_lower.startswith("room"):
+                    form_answers["room"] = value_text
+                elif label_lower.startswith("anything else"):
+                    form_answers["anything_else"] = value_text
+                else:
+                    # Fallback for any additional custom questions
+                    form_answers[label_lower] = value_text
+
+                # Show all fields on embed except "Room" which should be hidden until joining
+                if label_lower.startswith("room"):
+                    embed.add_field(name=label_clean, value="Revealed after joining", inline=False)
+                else:
+                    embed.add_field(name=label_clean, value=value_text, inline=False)
+
+            # Add helper slots
             for i in range(self.slots):
                 embed.add_field(name=f"👤 Helper Slot {i+1}", value="Empty", inline=True)
 
@@ -240,6 +266,7 @@ class TicketModal(Modal):
                 "embed_msg": msg,
                 "closed_stage": 0,
                 "rewarded": None,
+                "answers": form_answers,
             }
 
             await interaction.followup.send(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
@@ -497,7 +524,41 @@ class TicketModule(commands.Cog):
                 await ticket_info["embed_msg"].edit(embed=embed)
             except Exception:
                 pass
-            await interaction.response.send_message("You joined the ticket!", ephemeral=True)
+
+            # Send ephemeral details to the joining helper, including hidden fields like Room
+            details = ticket_info.get("answers", {}) or {}
+            in_game = details.get("in_game_name", "—")
+            server_name = details.get("server_name", "—")
+            room = details.get("room", "—")
+            anything_else = details.get("anything_else", "—")
+            category = ticket_info.get("category", "—")
+            requestor_id = ticket_info.get("requestor")
+            requester_text = f"<@{requestor_id}>" if requestor_id else "—"
+
+            try:
+                priv = discord.Embed(
+                    title=f"Ticket details (private) — {category}",
+                    color=discord.Color.blurple(),
+                )
+                priv.add_field(name="Requester", value=requester_text, inline=False)
+                priv.add_field(name="In‑game name", value=in_game, inline=True)
+                priv.add_field(name="Server name", value=server_name, inline=True)
+                priv.add_field(name="Room", value=room, inline=False)
+                if anything_else and anything_else != "—":
+                    # Keep this not inline to allow longer text
+                    priv.add_field(name="Anything else", value=anything_else[:1024], inline=False)
+                await interaction.response.send_message(embed=priv, ephemeral=True)
+            except Exception:
+                # Fallback to plain text ephemeral
+                text_lines = [
+                    f"Requester: {requester_text}",
+                    f"In-game name: {in_game}",
+                    f"Server name: {server_name}",
+                    f"Room: {room}",
+                ]
+                if anything_else and anything_else != "—":
+                    text_lines.append(f"Anything else: {anything_else}")
+                await interaction.response.send_message("\n".join(text_lines), ephemeral=True)
 
         elif custom_id == "remove_helper":
             await interaction.response.send_message("Use /ticket_kick to remove a specific member.", ephemeral=True)
