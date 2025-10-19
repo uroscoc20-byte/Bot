@@ -744,28 +744,47 @@ class TicketModule(commands.Cog):
             if stage == 0:
                 # First close: kick all helpers and requestor, move to stage 1
                 try:
-                    # Kick all helpers
+                    removed_users = []
+                    
+                    # Remove all helpers who joined via button
                     for helper_id in ticket_info["helpers"]:
                         if helper_id:
                             try:
                                 helper = interaction.guild.get_member(helper_id)
                                 if helper:
                                     await interaction.channel.set_permissions(helper, view_channel=False, send_messages=False)
+                                    removed_users.append(f"Helper: {helper.display_name}")
                             except Exception:
                                 pass
                     
-                    # Kick requestor
+                    # Remove all members with helper role
+                    roles_cfg = await db.get_roles()
+                    helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+                    if helper_role_id:
+                        helper_role = interaction.guild.get_role(helper_role_id)
+                        if helper_role:
+                            for member in interaction.channel.members:
+                                if helper_role in member.roles:
+                                    try:
+                                        await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
+                                        removed_users.append(f"Helper Role: {member.display_name}")
+                                    except Exception:
+                                        pass
+                    
+                    # Remove requestor
                     try:
                         requestor = interaction.guild.get_member(ticket_info["requestor"])
                         if requestor:
                             await interaction.channel.set_permissions(requestor, view_channel=False, send_messages=False)
+                            removed_users.append(f"Requestor: {requestor.display_name}")
                     except Exception:
                         pass
                     
                     # Move to stage 1
                     ticket_info["closed_stage"] = 1
                     
-                    await interaction.response.send_message("✅ Ticket closed. All helpers and requestor have been removed from the channel.", ephemeral=True)
+                    removed_text = "\n".join(removed_users) if removed_users else "No users to remove"
+                    await interaction.response.send_message(f"✅ Ticket closed. Removed from channel:\n{removed_text}", ephemeral=True)
                     
                 except Exception as e:
                     logger.exception(f"Error during first close: {e}")
