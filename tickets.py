@@ -16,8 +16,10 @@ DEFAULT_POINT_VALUES = {
     "Ultra Gramiel Express": 7,
     "4-Man Ultra Daily Express": 4,
     "7-Man Ultra Daily Express": 10,
+    "Daily 7-Man Express": 10,  # Match panel name
     "Ultra Weekly Express": 12,
     "Grim Express": 10,
+    "GrimChallenge Express": 10,  # Match panel name
     "Daily Temple Express": 6,
 }
 DEFAULT_HELPER_SLOTS = {"Daily 7-Man Express": 6, "GrimChallenge Express": 6}
@@ -319,14 +321,24 @@ class RewardChoiceView(View):
         if not ticket_info:
             await interaction.response.send_message("Ticket context missing.", ephemeral=True)
             return
-        category = ticket_info["category"]
-        cat_data = await db.get_category(category)
-        points_value = (cat_data or get_fallback_category(category))["points"]
-        await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
-        await generate_ticket_transcript(ticket_info, rewarded=True)
-        ticket_info["rewarded"] = True
-        ticket_info["closed_stage"] = 2
-        await interaction.response.send_message("Helpers rewarded and transcript generated. Click Close again to delete.", ephemeral=True)
+        
+        try:
+            category = ticket_info["category"]
+            cat_data = await db.get_category(category)
+            points_value = (cat_data or get_fallback_category(category))["points"]
+            
+            logger.info(f"Rewarding helpers for {category} ticket with {points_value} points each")
+            logger.info(f"Helpers to reward: {[h for h in ticket_info.get('helpers', []) if h]}")
+            
+            await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
+            await generate_ticket_transcript(ticket_info, rewarded=True)
+            ticket_info["rewarded"] = True
+            ticket_info["closed_stage"] = 2
+            await interaction.response.send_message(f"✅ Helpers rewarded with {points_value} points each and transcript generated. Click Close again to delete.", ephemeral=True)
+            
+        except Exception as e:
+            logger.exception(f"Error in reward_yes: {e}")
+            await interaction.response.send_message(f"⚠️ Error rewarding helpers: {e}", ephemeral=True)
 
     @discord.ui.button(label="No reward", style=discord.ButtonStyle.gray, custom_id="reward_no")
     async def reward_no(self, button: discord.ui.Button, interaction: discord.Interaction):

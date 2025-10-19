@@ -14,11 +14,28 @@ class PointsModule(commands.Cog):
         helpers = [h for h in ticket_info.get("helpers", []) if h]
         category = ticket_info.get("category")
         points = ticket_info.get("points", 10)
+        
+        print(f"[POINTS DEBUG] Rewarding {len(helpers)} helpers for {category} ticket with {points} points each")
+        print(f"[POINTS DEBUG] Helper IDs: {helpers}")
+        
+        if not helpers:
+            print("[POINTS DEBUG] No helpers to reward!")
+            return
+            
         for uid in helpers:
-            current = await db.get_points(uid)
-            await db.set_points(uid, current + points)
-        channel = ticket_info.get("embed_msg").channel
-        await channel.send(f"Helpers have been rewarded for **{category}** ticket!")
+            try:
+                current = await db.get_points(uid)
+                new_total = current + points
+                await db.set_points(uid, new_total)
+                print(f"[POINTS DEBUG] User {uid}: {current} -> {new_total} points")
+            except Exception as e:
+                print(f"[POINTS DEBUG] Error rewarding user {uid}: {e}")
+                
+        try:
+            channel = ticket_info.get("embed_msg").channel
+            await channel.send(f"🏆 **Helpers have been rewarded for {category} ticket!**\n💰 **{points} points** given to each helper")
+        except Exception as e:
+            print(f"[POINTS DEBUG] Error sending reward message: {e}")
 
     @commands.slash_command(name="points", description="Check your points or another user's points")
     async def points(
