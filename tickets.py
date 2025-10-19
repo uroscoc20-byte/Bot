@@ -763,11 +763,19 @@ class TicketModule(commands.Cog):
                     if helper_role_id:
                         helper_role = interaction.guild.get_role(helper_role_id)
                         if helper_role:
+                            # Remove helper role permissions from channel
+                            try:
+                                await interaction.channel.set_permissions(helper_role, view_channel=False, send_messages=False)
+                                removed_users.append(f"Helper Role: {helper_role.name} (role permissions removed)")
+                            except Exception:
+                                pass
+                            
+                            # Remove individual members with helper role
                             for member in interaction.channel.members:
                                 if helper_role in member.roles:
                                     try:
                                         await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
-                                        removed_users.append(f"Helper Role: {member.display_name}")
+                                        removed_users.append(f"Helper Role Member: {member.display_name}")
                                     except Exception:
                                         pass
                     
