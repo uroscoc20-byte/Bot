@@ -118,6 +118,32 @@ class VerificationModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.type != discord.InteractionType.component:
+            return
+        custom_id = interaction.data.get("custom_id")
+        if custom_id == "verify_open":
+            # Use saved category id if available
+            cfg = await db.load_config("verification_category")
+            category_id = (cfg or {}).get("id")
+            await interaction.response.send_modal(VerificationModal(category_id))
+        elif custom_id == "verify_close":
+            # Mirror close permission from view method
+            roles = await db.get_roles()
+            staff_id = roles.get("staff") if roles else None
+            admin_id = roles.get("admin") if roles else None
+            is_admin = admin_id and any(r.id == admin_id for r in interaction.user.roles)
+            is_staff = interaction.user.guild_permissions.administrator or (staff_id and any(r.id == staff_id for r in interaction.user.roles))
+            if not (is_admin or is_staff):
+                await interaction.response.send_message("Only staff/admin can close verification tickets.", ephemeral=True)
+                return
+            await interaction.response.send_message("Deleting verification channel...", ephemeral=True)
+            try:
+                await interaction.channel.delete(reason=f"Verification closed by {interaction.user}")
+            except Exception:
+                pass
+
     @commands.slash_command(name="verification_panel", description="Post verification panel (Admin/Staff).")
     async def verification_panel(
         self,

@@ -338,7 +338,13 @@ class RewardChoiceView(View):
 class TicketSelect(Select):
     def __init__(self, categories):
         options = [discord.SelectOption(label=cat["name"]) for cat in categories]
-        super().__init__(placeholder="Choose ticket type...", min_values=1, max_values=1, options=options)
+        super().__init__(
+            placeholder="Choose ticket type...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="ticket_select",  # fixed for persistence across restarts
+        )
 
     async def callback(self, interaction: discord.Interaction):
         member_role_ids = [role.id for role in interaction.user.roles]
@@ -483,12 +489,50 @@ class TicketModule(commands.Cog):
     async def on_interaction(self, interaction: discord.Interaction):
         if interaction.type != discord.InteractionType.component:
             return
+        custom_id = interaction.data.get("custom_id")
+
+        # Persistent handler for ticket panel select
+        if custom_id == "ticket_select":
+            # Permissions/restrictions check mirrors TicketSelect.callback
+            member_role_ids = [role.id for role in interaction.user.roles]
+            roles_cfg = await db.get_roles()
+            restricted_raw = roles_cfg.get("restricted", []) if roles_cfg else []
+            restricted_ids = []
+            for r in restricted_raw:
+                try:
+                    restricted_ids.append(int(r))
+                except Exception:
+                    pass
+            if any(rid in member_role_ids for rid in restricted_ids):
+                await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
+                return
+
+            if not bot_can_manage_channels(interaction):
+                await interaction.response.send_message(
+                    "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
+                    ephemeral=True,
+                )
+                return
+
+            values = interaction.data.get("values", []) or []
+            category_name = values[0] if values else None
+            if not category_name:
+                await interaction.response.send_message("Please select a category.", ephemeral=True)
+                return
+
+            cat_data = await db.get_category(category_name)
+            if not cat_data:
+                cat_data = get_fallback_category(category_name)
+            await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
+            return
+
+        # Ticket operations below require an active ticket context
         channel_id = interaction.channel.id
         ticket_info = active_tickets.get(channel_id)
         if not ticket_info:
             return
 
-        custom_id = interaction.data["custom_id"]
+        # Existing ticket component router
 
         if custom_id == "join_ticket":
             if interaction.user.id == ticket_info["requestor"]:
