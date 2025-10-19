@@ -35,6 +35,46 @@ class PersistentPanels(commands.Cog):
                         view = LeaderboardView(page, panel["data"].get("total_pages", 1), per_page)
                         await message.edit(embed=embed, view=view)
                     
+                    elif panel["panel_type"] == "verification":
+                        # Refresh verification panel
+                        from verification import VerificationPanelView
+                        category_id = panel["data"].get("category_id")
+                        embed = discord.Embed(
+                            title="🛡️ VERIFICATION PANEL 🛡️",
+                            description=(
+                                "Welcome to the server!\n"
+                                "To gain access, please complete the short verification process below.\n\n"
+                                "Click Verify and provide the following information:\n\n"
+                                "- In-Game Name – The name you use in the game.\n\n"
+                                "- Who Invited You – The name of the person who invited you to the server (if anyone).\n\n"
+                                "⚠️ Please make sure the information is accurate and complete.\n"
+                                "Once submitted, a staff member will review your verification and grant access as soon as possible."
+                            ),
+                            color=discord.Color.green(),
+                        )
+                        view = VerificationPanelView(category_id)
+                        await message.edit(embed=embed, view=view)
+                    
+                    elif panel["panel_type"] == "ticket":
+                        # Refresh ticket panel
+                        from tickets import TicketPanelView
+                        categories = panel["data"].get("categories", [])
+                        panel_config = panel["data"].get("panel_config", {})
+                        embed = discord.Embed(
+                            title="🎮 IN-GAME ASSISTANCE 🎮",
+                            description=panel_config.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
+                            color=panel_config.get("color", 0x5865F2),
+                        )
+                        services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
+                        embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
+                        embed.add_field(
+                            name="ℹ️ How it works",
+                            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
+                            inline=False,
+                        )
+                        view = TicketPanelView(categories)
+                        await message.edit(embed=embed, view=view)
+                    
                     # Add more panel types here as needed
                     
                 except discord.NotFound:
@@ -159,6 +199,46 @@ class PersistentPanels(commands.Cog):
                         total_pages = panel["data"].get("total_pages", 1)
                         embed = await create_leaderboard_embed(page=page, per_page=per_page)
                         view = LeaderboardView(page, total_pages, per_page)
+                        await message.edit(embed=embed, view=view)
+                    
+                    elif panel["panel_type"] == "verification":
+                        # Restore verification panel
+                        from verification import VerificationPanelView
+                        category_id = panel["data"].get("category_id")
+                        embed = discord.Embed(
+                            title="🛡️ VERIFICATION PANEL 🛡️",
+                            description=(
+                                "Welcome to the server!\n"
+                                "To gain access, please complete the short verification process below.\n\n"
+                                "Click Verify and provide the following information:\n\n"
+                                "- In-Game Name – The name you use in the game.\n\n"
+                                "- Who Invited You – The name of the person who invited you to the server (if anyone).\n\n"
+                                "⚠️ Please make sure the information is accurate and complete.\n"
+                                "Once submitted, a staff member will review your verification and grant access as soon as possible."
+                            ),
+                            color=discord.Color.green(),
+                        )
+                        view = VerificationPanelView(category_id)
+                        await message.edit(embed=embed, view=view)
+                    
+                    elif panel["panel_type"] == "ticket":
+                        # Restore ticket panel
+                        from tickets import TicketPanelView
+                        categories = panel["data"].get("categories", [])
+                        panel_config = panel["data"].get("panel_config", {})
+                        embed = discord.Embed(
+                            title="🎮 IN-GAME ASSISTANCE 🎮",
+                            description=panel_config.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
+                            color=panel_config.get("color", 0x5865F2),
+                        )
+                        services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
+                        embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
+                        embed.add_field(
+                            name="ℹ️ How it works",
+                            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
+                            inline=False,
+                        )
+                        view = TicketPanelView(categories)
                         await message.edit(embed=embed, view=view)
                     
                     # Add more panel types here as needed

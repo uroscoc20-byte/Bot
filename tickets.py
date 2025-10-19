@@ -414,7 +414,7 @@ class TicketModule(commands.Cog):
         panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
         embed = discord.Embed(
-            title="🎮 In-game Assistance",
+            title="🎮 IN-GAME ASSISTANCE 🎮",
             description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
             color=panel_cfg.get("color", 0x5865F2),
         )
@@ -425,7 +425,25 @@ class TicketModule(commands.Cog):
             value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
             inline=False,
         )
-        await ctx.respond(embed=embed, view=view)
+        message = await ctx.respond(embed=embed, view=view)
+        
+        # Save to database for persistence
+        if hasattr(message, 'message'):
+            message = message.message
+        
+        panel_data = {
+            "categories": categories,
+            "panel_config": panel_cfg,
+            "panel_type": "ticket"
+        }
+        await db.save_persistent_panel(
+            channel_id=ctx.channel.id,
+            message_id=message.id,
+            panel_type="ticket",
+            data=panel_data
+        )
+        
+        await ctx.followup.send("✅ **Persistent ticket panel created!** It will auto-refresh every 15 minutes.", ephemeral=True)
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
     async def ticket_kick(

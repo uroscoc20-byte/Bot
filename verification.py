@@ -139,12 +139,29 @@ class VerificationModule(commands.Cog):
             category_id = (cfg or {}).get("id")
 
         embed = discord.Embed(
-            title="🛡️ Verification Panel",
+            title="🛡️ VERIFICATION PANEL 🛡️",
             description=VERIFICATION_TEXT,
             color=discord.Color.green(),
         )
         view = VerificationPanelView(category_id)
-        await ctx.respond(embed=embed, view=view)
+        message = await ctx.respond(embed=embed, view=view)
+        
+        # Save to database for persistence
+        if hasattr(message, 'message'):
+            message = message.message
+        
+        panel_data = {
+            "category_id": category_id,
+            "panel_type": "verification"
+        }
+        await db.save_persistent_panel(
+            channel_id=ctx.channel.id,
+            message_id=message.id,
+            panel_type="verification",
+            data=panel_data
+        )
+        
+        await ctx.followup.send("✅ **Persistent verification panel created!** It will auto-refresh every 15 minutes.", ephemeral=True)
 
 def setup(bot):
     bot.add_cog(VerificationModule(bot))
