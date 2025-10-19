@@ -42,13 +42,13 @@ class PointsModule(commands.Cog):
         page: discord.Option(int, "Page number", required=False, default=1),
     ):
         rows = await db.get_leaderboard()
-        per_page = 10
+        per_page = 15
         total_pages = max(1, (len(rows) + per_page - 1) // per_page)
         if not rows:
             await ctx.respond("Leaderboard is empty.")
             return
         embed = await create_leaderboard_embed(page=page, per_page=per_page)
-        view = LeaderboardView(page, total_pages, per_page)
+        view = LeaderboardView()
         await ctx.respond(embed=embed, view=view)
 
     @commands.slash_command(name="points_reset", description="Reset all points (Admin only)")
