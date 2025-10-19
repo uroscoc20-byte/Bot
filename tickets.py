@@ -443,7 +443,7 @@ class TicketModule(commands.Cog):
             data=panel_data
         )
         
-        await ctx.followup.send("✅ **Persistent ticket panel created!** It will auto-refresh every 15 minutes.", ephemeral=True)
+        await ctx.followup.send("✅ **Persistent ticket panel created!** It will auto-refresh every 10 minutes.", ephemeral=True)
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
     async def ticket_kick(

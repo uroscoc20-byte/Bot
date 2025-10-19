@@ -25,13 +25,13 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord
         description=description,
         color=ACCENT,
     )
-    embed.set_footer(text=f"📄 Page {page}/{total_pages} • 🔄 Auto-refreshes every 15 minutes")
+    embed.set_footer(text=f"📄 Page {page}/{total_pages}")
     return embed
 
 
 class LeaderboardView(discord.ui.View):
     def __init__(self, current_page: int, total_pages: int, per_page: int):
-        super().__init__(timeout=120)
+        super().__init__(timeout=None)
         self.current_page = current_page
         self.total_pages = max(1, total_pages)
         self.per_page = per_page
