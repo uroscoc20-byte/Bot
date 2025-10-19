@@ -299,72 +299,6 @@ class TicketModal(Modal):
             except Exception:
                 pass
 
-# ---------- PROOF SUBMISSION MODAL ----------
-class ProofSubmissionModal(Modal):
-    def __init__(self, ticket_channel_id: int):
-        super().__init__(title="Submit Proof")
-        self.ticket_channel_id = ticket_channel_id
-        self.proof_url = InputText(
-            label="Proof Image URL*",
-            placeholder="Paste the image URL here",
-            style=discord.InputTextStyle.short,
-            required=True
-        )
-        self.add_item(self.proof_url)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.defer(ephemeral=True)
-        except Exception:
-            pass
-
-        ticket_info = active_tickets.get(self.ticket_channel_id)
-        if not ticket_info:
-            await interaction.followup.send("Ticket context missing.", ephemeral=True)
-            return
-
-        # Validate URL format
-        proof_url = (self.proof_url.value or "").strip()
-        if not proof_url or not (proof_url.startswith("http://") or proof_url.startswith("https://")):
-            await interaction.followup.send("Please provide a valid image URL starting with http:// or https://", ephemeral=True)
-            return
-
-        # Show proof in ticket channel for staff review
-        try:
-            embed = discord.Embed(
-                title="📸 Proof Submitted",
-                description=f"Proof submitted by {interaction.user.mention}",
-                color=discord.Color.blue()
-            )
-            embed.set_image(url=proof_url)
-            embed.timestamp = datetime.utcnow()
-            
-            channel = interaction.guild.get_channel(self.ticket_channel_id)
-            if channel:
-                await channel.send(embed=embed)
-        except Exception as e:
-            await interaction.followup.send(f"Failed to post proof: {e}", ephemeral=True)
-            return
-
-        # Store proof in ticket info
-        ticket_info["proof_url"] = proof_url
-        ticket_info["proof_submitted_by"] = interaction.user.id
-        ticket_info["closed_stage"] = 1
-
-        await interaction.followup.send("✅ Proof submitted! Staff can now decide on rewards.", ephemeral=True)
-
-    async def callback(self, interaction: discord.Interaction):
-        try:
-            await self.on_submit(interaction)
-        except Exception as e:
-            try:
-                if interaction.response.is_done():
-                    await interaction.followup.send("⚠️ Error submitting proof.", ephemeral=True)
-                else:
-                    await interaction.response.send_message("⚠️ Error submitting proof.", ephemeral=True)
-            except Exception:
-                pass
-
 # ---------- TICKET VIEW ----------
 class TicketView(View):
     def __init__(self, category, requestor_id):
@@ -421,9 +355,25 @@ class TicketSelect(Select):
                 restricted_ids.append(int(r))
             except Exception:
                 pass
+        
+        # Only block if user has a restricted role AND no admin/staff role
         if any(rid in member_role_ids for rid in restricted_ids):
-            await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
-            return
+            # Check if user has admin or staff role to override restriction
+            admin_role_id = roles_cfg.get("admin") if roles_cfg else None
+            staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+            helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+            
+            has_override_role = False
+            if admin_role_id and any(r.id == admin_role_id for r in interaction.user.roles):
+                has_override_role = True
+            if staff_role_id and any(r.id == staff_role_id for r in interaction.user.roles):
+                has_override_role = True
+            if helper_role_id and any(r.id == helper_role_id for r in interaction.user.roles):
+                has_override_role = True
+            
+            if not has_override_role:
+                await interaction.response.send_message("You cannot open a ticket due to your role restrictions.", ephemeral=True)
+                return
 
         if not bot_can_manage_channels(interaction):
             await interaction.response.send_message(
@@ -631,7 +581,7 @@ class TicketModule(commands.Cog):
                 category_name = custom_id.split("::", 1)[1]
                 logger.info(f"User {interaction.user} clicked ticket button for category: {category_name}")
                 
-                # Check for restricted roles
+                # Check for restricted roles (only block if explicitly restricted)
                 member_role_ids = [role.id for role in interaction.user.roles]
                 roles_cfg = await db.get_roles()
                 restricted_raw = roles_cfg.get("restricted", []) if roles_cfg else []
@@ -641,10 +591,26 @@ class TicketModule(commands.Cog):
                         restricted_ids.append(int(r))
                     except Exception:
                         pass
+                
+                # Only block if user has a restricted role AND no admin/staff role
                 if any(rid in member_role_ids for rid in restricted_ids):
-                    logger.info(f"User {interaction.user} blocked by restricted role")
-                    await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
-                    return
+                    # Check if user has admin or staff role to override restriction
+                    admin_role_id = roles_cfg.get("admin") if roles_cfg else None
+                    staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+                    helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+                    
+                    has_override_role = False
+                    if admin_role_id and any(r.id == admin_role_id for r in interaction.user.roles):
+                        has_override_role = True
+                    if staff_role_id and any(r.id == staff_role_id for r in interaction.user.roles):
+                        has_override_role = True
+                    if helper_role_id and any(r.id == helper_role_id for r in interaction.user.roles):
+                        has_override_role = True
+                    
+                    if not has_override_role:
+                        logger.info(f"User {interaction.user} blocked by restricted role")
+                        await interaction.response.send_message("You cannot open a ticket due to your role restrictions.", ephemeral=True)
+                        return
 
                 # Check bot permissions
                 if not bot_can_manage_channels(interaction):
@@ -747,6 +713,20 @@ class TicketModule(commands.Cog):
             await interaction.response.send_message("Use /ticket_kick to remove a specific member.", ephemeral=True)
             return
 
+        elif custom_id == "submit_proof":
+            # Only allow the requestor to submit proof
+            if interaction.user.id != ticket_info["requestor"]:
+                await interaction.response.send_message("Only the ticket requestor can submit proof.", ephemeral=True)
+                return
+            
+            # Check if proof already submitted
+            if ticket_info.get("proof_url"):
+                await interaction.response.send_message("Proof has already been submitted for this ticket.", ephemeral=True)
+                return
+            
+            await interaction.response.send_modal(ProofInstructionsModal(interaction.channel.id))
+            return
+
         elif custom_id == "close_ticket":
             roles_cfg = await db.get_roles()
             staff_role_id = roles_cfg.get("staff")
@@ -762,8 +742,34 @@ class TicketModule(commands.Cog):
                 return
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
-                # 1st close: show proof submission modal
-                await interaction.response.send_modal(ProofSubmissionModal(interaction.channel.id))
+                # First close: kick all helpers and requestor, move to stage 1
+                try:
+                    # Kick all helpers
+                    for helper_id in ticket_info["helpers"]:
+                        if helper_id:
+                            try:
+                                helper = interaction.guild.get_member(helper_id)
+                                if helper:
+                                    await interaction.channel.set_permissions(helper, view_channel=False, send_messages=False)
+                            except Exception:
+                                pass
+                    
+                    # Kick requestor
+                    try:
+                        requestor = interaction.guild.get_member(ticket_info["requestor"])
+                        if requestor:
+                            await interaction.channel.set_permissions(requestor, view_channel=False, send_messages=False)
+                    except Exception:
+                        pass
+                    
+                    # Move to stage 1
+                    ticket_info["closed_stage"] = 1
+                    
+                    await interaction.response.send_message("✅ Ticket closed. All helpers and requestor have been removed from the channel.", ephemeral=True)
+                    
+                except Exception as e:
+                    logger.exception(f"Error during first close: {e}")
+                    await interaction.response.send_message("⚠️ Error closing ticket. Please try again.", ephemeral=True)
             elif stage == 1:
                 # Only staff/admin can decide rewards
                 roles_cfg = await db.get_roles()
