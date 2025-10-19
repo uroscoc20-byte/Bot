@@ -749,19 +749,36 @@ class TicketModule(commands.Cog):
                 try:
                     removed_users = []
                     
-                    # Remove all helpers who joined via button
+                    # Remove all helpers who joined via button (except staff/admin)
+                    roles_cfg = await db.get_roles()
+                    staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+                    admin_role_id = roles_cfg.get("admin") if roles_cfg else None
+                    staff_role = interaction.guild.get_role(staff_role_id) if staff_role_id else None
+                    admin_role = interaction.guild.get_role(admin_role_id) if admin_role_id else None
+                    
                     for helper_id in ticket_info["helpers"]:
                         if helper_id:
                             try:
                                 helper = interaction.guild.get_member(helper_id)
                                 if helper:
-                                    await interaction.channel.set_permissions(helper, view_channel=False, send_messages=False)
-                                    removed_users.append(f"Helper: {helper.display_name}")
+                                    # Check if helper has staff or admin role (immune to removal)
+                                    is_staff = False
+                                    if staff_role and staff_role in helper.roles:
+                                        is_staff = True
+                                    if admin_role and admin_role in helper.roles:
+                                        is_staff = True
+                                    if helper.guild_permissions.administrator:
+                                        is_staff = True
+                                    
+                                    if not is_staff:
+                                        await interaction.channel.set_permissions(helper, view_channel=False, send_messages=False)
+                                        removed_users.append(f"Helper: {helper.display_name}")
+                                    else:
+                                        removed_users.append(f"Helper: {helper.display_name} (STAFF - kept in channel)")
                             except Exception:
                                 pass
                     
                     # Remove all members with helper role
-                    roles_cfg = await db.get_roles()
                     helper_role_id = roles_cfg.get("helper") if roles_cfg else None
                     if helper_role_id:
                         helper_role = interaction.guild.get_role(helper_role_id)
@@ -773,21 +790,50 @@ class TicketModule(commands.Cog):
                             except Exception:
                                 pass
                             
-                            # Remove individual members with helper role
+                            # Remove individual members with helper role (except staff/admin)
+                            staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+                            admin_role_id = roles_cfg.get("admin") if roles_cfg else None
+                            staff_role = interaction.guild.get_role(staff_role_id) if staff_role_id else None
+                            admin_role = interaction.guild.get_role(admin_role_id) if admin_role_id else None
+                            
                             for member in interaction.channel.members:
                                 if helper_role in member.roles:
-                                    try:
-                                        await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
-                                        removed_users.append(f"Helper Role Member: {member.display_name}")
-                                    except Exception:
-                                        pass
+                                    # Check if member has staff or admin role (immune to removal)
+                                    is_staff = False
+                                    if staff_role and staff_role in member.roles:
+                                        is_staff = True
+                                    if admin_role and admin_role in member.roles:
+                                        is_staff = True
+                                    if member.guild_permissions.administrator:
+                                        is_staff = True
+                                    
+                                    if not is_staff:
+                                        try:
+                                            await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
+                                            removed_users.append(f"Helper Role Member: {member.display_name}")
+                                        except Exception:
+                                            pass
+                                    else:
+                                        removed_users.append(f"Helper Role Member: {member.display_name} (STAFF - kept in channel)")
                     
-                    # Remove requestor
+                    # Remove requestor (unless they have staff/admin role)
                     try:
                         requestor = interaction.guild.get_member(ticket_info["requestor"])
                         if requestor:
-                            await interaction.channel.set_permissions(requestor, view_channel=False, send_messages=False)
-                            removed_users.append(f"Requestor: {requestor.display_name}")
+                            # Check if requestor has staff or admin role (immune to removal)
+                            is_staff = False
+                            if staff_role and staff_role in requestor.roles:
+                                is_staff = True
+                            if admin_role and admin_role in requestor.roles:
+                                is_staff = True
+                            if requestor.guild_permissions.administrator:
+                                is_staff = True
+                            
+                            if not is_staff:
+                                await interaction.channel.set_permissions(requestor, view_channel=False, send_messages=False)
+                                removed_users.append(f"Requestor: {requestor.display_name}")
+                            else:
+                                removed_users.append(f"Requestor: {requestor.display_name} (STAFF - kept in channel)")
                     except Exception:
                         pass
                     
