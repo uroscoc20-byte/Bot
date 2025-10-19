@@ -20,7 +20,7 @@ DEFAULT_POINT_VALUES = {
     "Grim Express": 10,
     "Daily Temple Express": 6,
 }
-DEFAULT_HELPER_SLOTS = {"7-Man Ultra Daily Express": 6, "Grim Express": 6}
+DEFAULT_HELPER_SLOTS = {"Daily 7-Man Express": 6, "GrimChallenge Express": 6}
 DEFAULT_SLOTS = 3
 DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room?*", "Anything else?"]
 
