@@ -71,7 +71,8 @@ class CustomCommandsModule(commands.Cog):
                 "`/points_remove @user amount` — Remove points (admin)\n"
                 "`/points_set @user amount` — Set points (admin)\n"
                 "`/points_remove_user @user` — Remove user from leaderboard (admin)\n"
-                "`/points_reset` — Reset all leaderboard (admin)"
+                "`/points_reset` — Reset all leaderboard (admin)\n"
+                "`/give_points [points] [helpers]` — Auto reward from a ticket or manual list (admin)"
             ),
             inline=False,
         )

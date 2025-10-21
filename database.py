@@ -131,6 +131,13 @@ class Database:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """)
+        # Global ticket counter to guarantee unique ticket IDs across all categories
+        await self.db.execute("""
+        CREATE TABLE IF NOT EXISTS global_ticket_counter (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            last_number INTEGER
+        )
+        """)
         await self.db.commit()
 
     async def _fs_run(self, func):
