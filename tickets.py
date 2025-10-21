@@ -376,133 +376,37 @@ class TicketView(View):
         self.add_item(Button(label="Join", style=discord.ButtonStyle.green, custom_id="join_ticket", emoji="➕"))
         self.add_item(Button(label="Close", style=discord.ButtonStyle.red, custom_id="close_ticket", emoji="🔒"))
 
-class CloseConfirmationView(View):
+
+class DeleteConfirmationView(View):
     def __init__(self, channel_id: int):
         super().__init__(timeout=60)
         self.channel_id = channel_id
 
-    @discord.ui.button(label="Yes, Close Ticket", style=discord.ButtonStyle.red, custom_id="confirm_close")
-    async def confirm_close(self, button: discord.ui.Button, interaction: discord.Interaction):
+    @discord.ui.button(label="Yes, Delete Channel", style=discord.ButtonStyle.red, custom_id="confirm_delete")
+    async def confirm_delete(self, button: discord.ui.Button, interaction: discord.Interaction):
         ticket_info = active_tickets.get(self.channel_id)
         if not ticket_info:
             await interaction.response.send_message("Ticket not found.", ephemeral=True)
             return
         
-        # Mark as confirmed and proceed with closing
+        # Mark as confirmed and proceed with deletion
         ticket_info["close_confirmed"] = True
         
-        # Trigger the close_ticket interaction again
-        interaction.data["custom_id"] = "close_ticket"
-        # This will trigger the close_ticket handler which will see close_confirmed=True
-        await interaction.response.send_message("✅ Confirmed. Closing ticket...", ephemeral=True)
-        
-        # Call the close method directly
+        # Call the final close method
         try:
-            removed_users = []
-            
-            # Remove all helpers who joined via button (except staff/admin)
-            roles_cfg = await db.get_roles()
-            staff_role_id = roles_cfg.get("staff") if roles_cfg else None
-            admin_role_id = roles_cfg.get("admin") if roles_cfg else None
-            staff_role = interaction.guild.get_role(staff_role_id) if staff_role_id else None
-            admin_role = interaction.guild.get_role(admin_role_id) if admin_role_id else None
-            
-            for helper_id in ticket_info["helpers"]:
-                if helper_id:
-                    try:
-                        helper = interaction.guild.get_member(helper_id)
-                        if helper:
-                            # Check if helper has staff or admin role (immune to removal)
-                            is_staff = False
-                            if staff_role and staff_role in helper.roles:
-                                is_staff = True
-                            if admin_role and admin_role in helper.roles:
-                                is_staff = True
-                            if helper.guild_permissions.administrator:
-                                is_staff = True
-                            
-                            if not is_staff:
-                                await interaction.channel.set_permissions(helper, view_channel=False, send_messages=False)
-                                removed_users.append(f"Helper: {helper.display_name}")
-                            else:
-                                removed_users.append(f"Helper: {helper.display_name} (STAFF - kept in channel)")
-                    except Exception:
-                        pass
-            
-            # Remove all members with helper role
-            helper_role_id = roles_cfg.get("helper") if roles_cfg else None
-            if helper_role_id:
-                helper_role = interaction.guild.get_role(helper_role_id)
-                if helper_role:
-                    # Remove helper role permissions from channel
-                    try:
-                        await interaction.channel.set_permissions(helper_role, view_channel=False, send_messages=False)
-                        removed_users.append(f"Helper Role: {helper_role.name} (role permissions removed)")
-                    except Exception:
-                        pass
-                    
-                    # Remove individual members with helper role (except staff/admin)
-                    for member in interaction.channel.members:
-                        if helper_role in member.roles:
-                            # Check if member has staff or admin role (immune to removal)
-                            is_staff = False
-                            if staff_role and staff_role in member.roles:
-                                is_staff = True
-                            if admin_role and admin_role in member.roles:
-                                is_staff = True
-                            if member.guild_permissions.administrator:
-                                is_staff = True
-                            
-                            if not is_staff:
-                                try:
-                                    await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
-                                    removed_users.append(f"Helper Role Member: {member.display_name}")
-                                except Exception:
-                                    pass
-                            else:
-                                removed_users.append(f"Helper Role Member: {member.display_name} (STAFF - kept in channel)")
-            
-            # Remove requestor (unless they have staff/admin role)
-            try:
-                requestor = interaction.guild.get_member(ticket_info["requestor"])
-                if requestor:
-                    # Check if requestor has staff or admin role (immune to removal)
-                    is_staff = False
-                    if staff_role and staff_role in requestor.roles:
-                        is_staff = True
-                    if admin_role and admin_role in requestor.roles:
-                        is_staff = True
-                    if requestor.guild_permissions.administrator:
-                        is_staff = True
-                    
-                    if not is_staff:
-                        await interaction.channel.set_permissions(requestor, view_channel=False, send_messages=False)
-                        removed_users.append(f"Requestor: {requestor.display_name}")
-                    else:
-                        removed_users.append(f"Requestor: {requestor.display_name} (STAFF - kept in channel)")
-            except Exception:
-                pass
-            
-            # Generate transcript (no auto-reward)
-            await generate_ticket_transcript(ticket_info, rewarded=False, closer_id=interaction.user.id)
-            
-            removed_text = "\n".join(removed_users) if removed_users else "No users to remove"
-            await interaction.followup.send(f"✅ Ticket closed. Removed from channel:\n{removed_text}\n\nTranscript generated. Use `/give_points` to manually reward helpers.", ephemeral=True)
-            
-            # Delete channel after a short delay
+            await interaction.response.send_message("✅ Confirmed. Deleting ticket channel...", ephemeral=True)
             active_tickets.pop(interaction.channel.id, None)
             try:
                 await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
             except Exception:
                 pass
-                
         except Exception as e:
-            logger.exception(f"Error during ticket close: {e}")
-            await interaction.followup.send("⚠️ Error closing ticket. Please try again.", ephemeral=True)
+            logger.exception(f"Error during final close: {e}")
+            await interaction.followup.send("⚠️ Error deleting channel. Please try again.", ephemeral=True)
 
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.gray, custom_id="cancel_close")
-    async def cancel_close(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Ticket closure cancelled.", ephemeral=True)
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.gray, custom_id="cancel_delete")
+    async def cancel_delete(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.send_message("Channel deletion cancelled.", ephemeral=True)
 
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
@@ -551,10 +455,9 @@ class RewardChoiceView(View):
                 print(f"[REWARD DEBUG] WARNING: Points value is 0 for '{category}'!")
             
             await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
-            await generate_ticket_transcript(ticket_info, rewarded=True)
             ticket_info["rewarded"] = True
             ticket_info["closed_stage"] = 2
-            await interaction.response.send_message(f"✅ Helpers rewarded with {points_value} points each and transcript generated. Click Close again to delete.", ephemeral=True)
+            await interaction.response.send_message(f"✅ Helpers rewarded with {points_value} points each. Click Close again to generate transcript.", ephemeral=True)
             
         except Exception as e:
             logger.exception(f"Error in reward_yes: {e}")
@@ -566,10 +469,9 @@ class RewardChoiceView(View):
         if not ticket_info:
             await interaction.response.send_message("Ticket context missing.", ephemeral=True)
             return
-        await generate_ticket_transcript(ticket_info, rewarded=False)
         ticket_info["rewarded"] = False
         ticket_info["closed_stage"] = 2
-        await interaction.response.send_message("Transcript generated without rewards. Click Close again to delete.", ephemeral=True)
+        await interaction.response.send_message("No rewards given. Click Close again to generate transcript.", ephemeral=True)
 
 # ---------- SELECT MENU ----------
 class TicketSelect(Select):
@@ -894,26 +796,8 @@ class TicketModule(commands.Cog):
             logger.exception(f"Error in give_points: {e}")
             await ctx.respond(f"❌ Error giving points: {e}", ephemeral=True)
 
-    async def _show_close_confirmation(self, interaction: discord.Interaction, ticket_info):
-        """Show confirmation dialog for closing ticket"""
-        embed = discord.Embed(
-            title="⚠️ Confirm Ticket Closure",
-            description=(
-                "**Are you sure you want to close this ticket?**\n\n"
-                "**This will:**\n"
-                "• Remove all helpers and requestor from the channel\n"
-                "• Generate a transcript with all messages and images\n"
-                "• **PERMANENTLY DELETE** the ticket channel\n\n"
-                "**This action cannot be undone!**"
-            ),
-            color=discord.Color.red()
-        )
-        
-        view = CloseConfirmationView(interaction.channel.id)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-    async def _close_ticket_confirm(self, interaction: discord.Interaction, ticket_info):
-        """Actually close the ticket after confirmation"""
+    async def _first_close(self, interaction: discord.Interaction, ticket_info):
+        """First close: remove helpers/requestor, move to stage 1"""
         try:
             removed_users = []
             
@@ -1000,22 +884,54 @@ class TicketModule(commands.Cog):
             except Exception:
                 pass
             
-            # Generate transcript (no auto-reward)
-            await generate_ticket_transcript(ticket_info, rewarded=False, closer_id=interaction.user.id)
+            # Move to stage 1
+            ticket_info["closed_stage"] = 1
             
             removed_text = "\n".join(removed_users) if removed_users else "No users to remove"
-            await interaction.response.send_message(f"✅ Ticket closed. Removed from channel:\n{removed_text}\n\nTranscript generated. Use `/give_points` to manually reward helpers.", ephemeral=True)
-            
-            # Delete channel after a short delay
-            active_tickets.pop(interaction.channel.id, None)
-            try:
-                await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
-            except Exception:
-                pass
+            await interaction.response.send_message(f"✅ Ticket closed. Removed from channel:\n{removed_text}\n\nUse `/give_points` to reward helpers, then click Close again to generate transcript.", ephemeral=True)
                 
         except Exception as e:
-            logger.exception(f"Error during ticket close: {e}")
+            logger.exception(f"Error during first close: {e}")
             await interaction.response.send_message("⚠️ Error closing ticket. Please try again.", ephemeral=True)
+
+    async def _second_close(self, interaction: discord.Interaction, ticket_info):
+        """Second close: generate transcript and show confirmation"""
+        try:
+            # Generate transcript
+            await generate_ticket_transcript(ticket_info, rewarded=False, closer_id=interaction.user.id)
+            
+            # Move to stage 2
+            ticket_info["closed_stage"] = 2
+            
+            # Show confirmation dialog
+            embed = discord.Embed(
+                title="⚠️ Confirm Channel Deletion",
+                description=(
+                    "**Are you sure you want to delete this ticket channel?**\n\n"
+                    "**This will:**\n"
+                    "• **PERMANENTLY DELETE** the ticket channel\n"
+                    "• Remove all messages and history\n"
+                    "• **This action cannot be undone!**\n\n"
+                    "**Transcript has been generated and saved.**"
+                ),
+                color=discord.Color.red()
+            )
+            
+            view = DeleteConfirmationView(interaction.channel.id)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                
+        except Exception as e:
+            logger.exception(f"Error during second close: {e}")
+            await interaction.response.send_message("⚠️ Error generating transcript. Please try again.", ephemeral=True)
+
+    async def _final_close(self, interaction: discord.Interaction, ticket_info):
+        """Final close: delete the channel"""
+        await interaction.response.send_message("Deleting ticket channel...", ephemeral=True)
+        active_tickets.pop(interaction.channel.id, None)
+        try:
+            await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
+        except Exception:
+            pass
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
@@ -1202,13 +1118,17 @@ class TicketModule(commands.Cog):
                 await interaction.response.send_message("Only staff, admins, or the requestor can close this ticket.", ephemeral=True)
                 return
             
-            # Check if already confirmed
-            if ticket_info.get("close_confirmed"):
-                # Proceed with actual closing
-                await self._close_ticket_confirm(interaction, ticket_info)
+            # Check current stage
+            stage = ticket_info.get("closed_stage", 0)
+            if stage == 0:
+                # First close: remove helpers/requestor, move to stage 1
+                await self._first_close(interaction, ticket_info)
+            elif stage == 1:
+                # Second close: generate transcript + confirmation, move to stage 2
+                await self._second_close(interaction, ticket_info)
             else:
-                # Show confirmation dialog
-                await self._show_close_confirmation(interaction, ticket_info)
+                # Final stage: delete channel
+                await self._final_close(interaction, ticket_info)
 
 def setup(bot):
     bot.add_cog(TicketModule(bot))
