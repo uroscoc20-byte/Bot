@@ -5,7 +5,7 @@ import logging
 from points import PointsModule
 from database import db
 from datetime import datetime
-from io import StringIO
+from io import StringIO, BytesIO
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -138,10 +138,16 @@ async def generate_ticket_transcript(ticket_info, rewarded=False, closer_id=None
         guild = channel.guild
         transcript_channel = guild.get_channel(transcript_channel_id)
         if transcript_channel:
-            file = discord.File(StringIO(transcript_text), filename=f"transcript-{channel.name}.txt")
-            
-            # Send main transcript
-            await transcript_channel.send(embed=embed, file=file)
+            try:
+                file = discord.File(BytesIO(transcript_text.encode("utf-8")), filename=f"transcript-{channel.name}.txt")
+                # Send main transcript
+                await transcript_channel.send(embed=embed, file=file)
+            except Exception as e:
+                logger.warning(f"Failed to send transcript file: {e}")
+                # Fallback: send embed only, and then paste transcript text in chunks
+                await transcript_channel.send(embed=embed)
+                chunk = transcript_text[:1900]
+                await transcript_channel.send(f"```\n{chunk}\n```")
             
             # Send images as separate messages for better visibility
             if image_urls:
@@ -172,6 +178,106 @@ async def generate_ticket_transcript(ticket_info, rewarded=False, closer_id=None
                         logger.warning(f"Failed to send image {img_info}: {e}")
                         # Fallback: send as text with clickable link
                         await transcript_channel.send(f"📷 {img_info}")
+
+
+# ---------- HELPERS / CATEGORY EXTRACTION ----------
+def _extract_ids_from_text(text: str) -> list[int]:
+    ids: list[int] = []
+    if not text:
+        return ids
+    # Support <@123>, <@!123>, raw numeric IDs, and mentions separated by spaces/commas
+    buf = text.replace(",", " ").split()
+    for tok in buf:
+        s = tok.strip()
+        if s.startswith("<@") and s.endswith(">"):
+            s = s[2:-1]
+            if s.startswith("!"):
+                s = s[1:]
+        try:
+            val = int(s)
+            ids.append(val)
+        except Exception:
+            continue
+    # Deduplicate while preserving order
+    seen = set()
+    out: list[int] = []
+    for v in ids:
+        if v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def extract_ticket_category_from_embed_msg(msg: discord.Message) -> str | None:
+    try:
+        if not msg or not msg.embeds:
+            return None
+        title = msg.embeds[0].title or ""
+        # Expect format: "🎫 {category} Ticket #{number}"
+        if " Ticket #" in title:
+            return title.replace("🎫", "").split(" Ticket #", 1)[0].strip()
+        # Fallback: sometimes category in description
+        desc = msg.embeds[0].description or ""
+        if "Requester:" in desc and "Ticket" in title:
+            # Title may be just ticket + number; no reliable parse
+            return None
+        return None
+    except Exception:
+        return None
+
+
+def extract_helpers_from_embed_msg(msg: discord.Message, helper_slots_count: int | None = None) -> list[int]:
+    if not msg or not msg.embeds:
+        return []
+    embed = msg.embeds[0]
+    helpers: list[int] = []
+    # Helper fields are created last; compute base index like elsewhere
+    total_fields = len(embed.fields)
+    if helper_slots_count is None:
+        # Try to infer by counting fields that look like helper slots
+        slot_like = 0
+        for f in embed.fields:
+            name_low = (f.name or "").lower()
+            if "helper slot" in name_low or name_low.startswith("👤 helper slot"):
+                slot_like += 1
+        helper_slots_count = max(slot_like, 0)
+    if helper_slots_count <= 0:
+        return []
+    base_index = total_fields - helper_slots_count
+    for i in range(helper_slots_count):
+        try:
+            field = embed.fields[base_index + i]
+        except Exception:
+            continue
+        value = (field.value or "").strip()
+        ids = _extract_ids_from_text(value)
+        helpers.append(ids[0] if ids else None)  # keep None for empty
+    # Normalize: ensure list length equals slots
+    if len(helpers) < helper_slots_count:
+        helpers.extend([None] * (helper_slots_count - len(helpers)))
+    return helpers
+
+
+def refresh_ticket_helpers_from_embed(ticket_info: dict):
+    try:
+        msg: discord.Message = ticket_info.get("embed_msg")
+        current_slots = len(ticket_info.get("helpers", []) or [])
+        parsed = extract_helpers_from_embed_msg(msg, current_slots)
+        if parsed and any(h for h in parsed):
+            ticket_info["helpers"] = parsed
+    except Exception:
+        pass
+
+
+def extract_requestor_id_from_embed_msg(msg: discord.Message) -> int | None:
+    try:
+        if not msg or not msg.embeds:
+            return None
+        desc = msg.embeds[0].description or ""
+        ids = _extract_ids_from_text(desc)
+        return ids[0] if ids else None
+    except Exception:
+        return None
 
 # ---------- TICKET MODAL ----------
 class TicketModal(Modal):
@@ -340,6 +446,7 @@ class TicketModal(Modal):
                 "closed_stage": 0,
                 "rewarded": None,
                 "answers": form_answers,
+                "ticket_number": number,
             }
 
             await interaction.followup.send(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
@@ -421,6 +528,8 @@ class RewardChoiceView(View):
             return
         
         try:
+            # Ensure helpers are up-to-date from the embed just before rewarding
+            refresh_ticket_helpers_from_embed(ticket_info)
             category = ticket_info["category"]
             cat_data = await db.get_category(category)
             fallback_data = get_fallback_category(category)
@@ -456,8 +565,13 @@ class RewardChoiceView(View):
             
             await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
             ticket_info["rewarded"] = True
-            ticket_info["closed_stage"] = 2
-            await interaction.response.send_message(f"✅ Helpers rewarded with {points_value} points each. Click Close again to generate transcript.", ephemeral=True)
+            # Proceed to generate transcript and confirmation
+            cog = interaction.client.get_cog("TicketModule")
+            if cog:
+                await cog._second_close(interaction, ticket_info)
+            else:
+                ticket_info["closed_stage"] = 2
+                await interaction.response.send_message("✅ Helpers rewarded. Proceeding to deletion confirmation.", ephemeral=True)
             
         except Exception as e:
             logger.exception(f"Error in reward_yes: {e}")
@@ -470,8 +584,13 @@ class RewardChoiceView(View):
             await interaction.response.send_message("Ticket context missing.", ephemeral=True)
             return
         ticket_info["rewarded"] = False
-        ticket_info["closed_stage"] = 2
-        await interaction.response.send_message("No rewards given. Click Close again to generate transcript.", ephemeral=True)
+        # Proceed to transcript and confirmation without rewards
+        cog = interaction.client.get_cog("TicketModule")
+        if cog:
+            await cog._second_close(interaction, ticket_info)
+        else:
+            ticket_info["closed_stage"] = 2
+            await interaction.response.send_message("No rewards given. Proceeding to deletion confirmation.", ephemeral=True)
 
 # ---------- SELECT MENU ----------
 class TicketSelect(Select):
@@ -722,76 +841,83 @@ class TicketModule(commands.Cog):
             logger.exception(f"Error resetting ticket counter: {e}")
             await ctx.respond(f"❌ Error resetting counter: {e}", ephemeral=True)
 
-    @commands.slash_command(name="give_points", description="Give points to helpers who joined a specific ticket panel (admin only)")
+    @commands.slash_command(name="give_points", description="Reward helpers automatically from current ticket or manual list (admin only)")
     async def give_points(
         self,
         ctx: discord.ApplicationContext,
-        panel_id: discord.Option(int, "Panel ID (1-8) to reward helpers from"),
-        points: discord.Option(int, "Points to give each helper", required=True),
-        helpers: discord.Option(str, "Comma-separated list of helper user IDs or mentions", required=True)
+        points: discord.Option(int, "Override points; leave 0 for category default", required=False, default=0),
+        helpers: discord.Option(str, "Helper IDs/mentions, optional (auto-detect from ticket)", required=False, default="")
     ):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You do not have permission to use this.", ephemeral=True)
             return
-        
-        if panel_id < 1 or panel_id > 8:
-            await ctx.respond("❌ Panel ID must be between 1 and 8.", ephemeral=True)
-            return
-        
         try:
-            # Parse helper IDs from the input
-            helper_ids = []
-            for helper_str in helpers.split(','):
-                helper_str = helper_str.strip()
-                # Remove <@ and > if it's a mention
-                if helper_str.startswith('<@') and helper_str.endswith('>'):
-                    helper_str = helper_str[2:-1]
-                # Remove ! if it's a nickname mention
-                if helper_str.startswith('!'):
-                    helper_str = helper_str[1:]
-                
-                try:
-                    helper_id = int(helper_str)
-                    helper_ids.append(helper_id)
-                except ValueError:
-                    await ctx.respond(f"❌ Invalid helper ID: {helper_str}", ephemeral=True)
-                    return
-            
+            channel_id = ctx.channel.id
+            ticket_info = active_tickets.get(channel_id)
+            helper_ids: list[int] = []
+            category_name = None
+            default_points = 0
+
+            # If we're in a ticket, auto-detect helpers and category
+            if ticket_info and isinstance(ctx.channel, discord.TextChannel):
+                category_name = ticket_info.get("category") or extract_ticket_category_from_embed_msg(ticket_info.get("embed_msg"))
+                refresh_ticket_helpers_from_embed(ticket_info)
+                helper_ids = [h for h in ticket_info.get("helpers", []) if h]
+                # Determine default points from category
+                if category_name:
+                    cat_data = await db.get_category(category_name)
+                    fb = get_fallback_category(category_name)
+                    default_points = fb.get("points", 0)
+                    # Prefer fallback to ensure intended mapping; admin override takes precedence
+                    points_to_use = points if points and points > 0 else default_points
+                else:
+                    points_to_use = points if points and points > 0 else 0
+            else:
+                # Not in a tracked ticket; require helpers input
+                points_to_use = points
+
+            # If helpers param provided, merge/replace
+            if helpers:
+                parsed = _extract_ids_from_text(helpers)
+                # If we had auto-detected helpers, merge unique; else use parsed
+                if helper_ids:
+                    base = set(helper_ids)
+                    for pid in parsed:
+                        if pid not in base:
+                            helper_ids.append(pid)
+                            base.add(pid)
+                else:
+                    helper_ids = parsed
+
             if not helper_ids:
-                await ctx.respond("❌ No valid helper IDs provided.", ephemeral=True)
+                await ctx.respond("❌ No helpers found to reward. Provide helpers or run in a ticket channel.", ephemeral=True)
                 return
-            
-            # Get helper usernames for confirmation
-            helper_names = []
-            for helper_id in helper_ids:
+
+            if not points_to_use or points_to_use <= 0:
+                await ctx.respond("❌ Points must be provided or resolvable from ticket category.", ephemeral=True)
+                return
+
+            # Execute rewards
+            success = 0
+            names = []
+            for uid in helper_ids:
                 try:
-                    helper = ctx.guild.get_member(helper_id)
-                    if helper:
-                        helper_names.append(helper.display_name)
-                    else:
-                        helper_names.append(f"Unknown User ({helper_id})")
-                except Exception:
-                    helper_names.append(f"Unknown User ({helper_id})")
-            
-            # Give points to each helper
-            points_given = 0
-            for helper_id in helper_ids:
-                try:
-                    current_points = await db.get_points(helper_id)
-                    new_points = current_points + points
-                    await db.set_points(helper_id, new_points)
-                    points_given += 1
+                    current = await db.get_points(uid)
+                    await db.set_points(uid, current + points_to_use)
+                    success += 1
+                    member = ctx.guild.get_member(uid)
+                    names.append(member.display_name if member else f"Unknown User ({uid})")
                 except Exception as e:
-                    logger.warning(f"Failed to give points to {helper_id}: {e}")
-            
+                    logger.warning(f"Failed to give points to {uid}: {e}")
+
+            cat_text = f" for {category_name}" if category_name else ""
             await ctx.respond(
-                f"✅ **Panel {panel_id} Rewards**\n"
-                f"**Points given:** {points} to each helper\n"
-                f"**Helpers rewarded:** {points_given}/{len(helper_ids)}\n"
-                f"**Helper names:** {', '.join(helper_names)}",
-                ephemeral=True
+                f"✅ **Rewards Granted{cat_text}**\n"
+                f"Points per helper: **{points_to_use}**\n"
+                f"Helpers rewarded: **{success}/{len(helper_ids)}**\n"
+                f"Helpers: {', '.join(names)}",
+                ephemeral=True,
             )
-            
         except Exception as e:
             logger.exception(f"Error in give_points: {e}")
             await ctx.respond(f"❌ Error giving points: {e}", ephemeral=True)
@@ -897,8 +1023,9 @@ class TicketModule(commands.Cog):
     async def _second_close(self, interaction: discord.Interaction, ticket_info):
         """Second close: generate transcript and show confirmation"""
         try:
-            # Generate transcript
-            await generate_ticket_transcript(ticket_info, rewarded=False, closer_id=interaction.user.id)
+            # Generate transcript, pass whether rewarded happened
+            rewarded = bool(ticket_info.get("rewarded"))
+            await generate_ticket_transcript(ticket_info, rewarded=rewarded, closer_id=interaction.user.id)
             
             # Move to stage 2
             ticket_info["closed_stage"] = 2
@@ -1009,7 +1136,11 @@ class TicketModule(commands.Cog):
 
         if not ticket_info:
             return
+        # If ticket already closed beyond stage 0, block joins
         if custom_id == "join_ticket":
+            if ticket_info.get("closed_stage", 0) > 0:
+                await interaction.response.send_message("This ticket is closing; joining is disabled.", ephemeral=True)
+                return
             if interaction.user.id == ticket_info["requestor"]:
                 await interaction.response.send_message("You cannot join your own ticket.", ephemeral=True)
                 return
@@ -1124,8 +1255,18 @@ class TicketModule(commands.Cog):
                 # First close: remove helpers/requestor, move to stage 1
                 await self._first_close(interaction, ticket_info)
             elif stage == 1:
-                # Second close: generate transcript + confirmation, move to stage 2
-                await self._second_close(interaction, ticket_info)
+                # Second close: before transcript, ask reward choice to auto-detect helpers/category
+                try:
+                    # Ensure latest helpers before offering reward
+                    refresh_ticket_helpers_from_embed(ticket_info)
+                except Exception:
+                    pass
+                view = RewardChoiceView(interaction.channel.id)
+                await interaction.response.send_message(
+                    "Would you like to reward helpers before generating transcript?",
+                    view=view,
+                    ephemeral=True,
+                )
             else:
                 # Final stage: delete channel
                 await self._final_close(interaction, ticket_info)
