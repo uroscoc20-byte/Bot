@@ -95,6 +95,12 @@ class Database:
         )
         """)
         await self.db.execute("""
+        CREATE TABLE IF NOT EXISTS global_ticket_counter (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            last_number INTEGER
+        )
+        """)
+        await self.db.execute("""
         CREATE TABLE IF NOT EXISTS categories (
             name TEXT PRIMARY KEY,
             questions TEXT,

@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord.ui import View, Button, Select, Modal, InputText
 import logging
+import re
 from points import PointsModule
 from database import db
 from datetime import datetime
@@ -408,6 +409,86 @@ class DeleteConfirmationView(View):
     async def cancel_delete(self, button: discord.ui.Button, interaction: discord.Interaction):
         await interaction.response.send_message("Channel deletion cancelled.", ephemeral=True)
 
+
+# ---------- RECOVERY / PARSING HELPERS ----------
+def _parse_user_ids_from_text(text: str):
+    if not text:
+        return []
+    return [int(m) for m in re.findall(r"<@!?(\d+)>", text)]
+
+
+async def recover_ticket_from_channel(channel: discord.TextChannel):
+    """Attempt to reconstruct ticket_info from the pinned embed in a ticket channel.
+    Returns a ticket_info dict compatible with active_tickets or None if not recoverable.
+    """
+    try:
+        # Prefer pinned messages
+        pinned = []
+        try:
+            pinned = await channel.pins()
+        except Exception:
+            pinned = []
+
+        candidate_msg = None
+        for msg in pinned:
+            if msg.embeds:
+                emb = msg.embeds[0]
+                if emb.title and "Ticket #" in emb.title:
+                    candidate_msg = msg
+                    break
+
+        # Fallback: scan recent history
+        if candidate_msg is None:
+            async for msg in channel.history(limit=50, oldest_first=True):
+                if msg.embeds:
+                    emb = msg.embeds[0]
+                    if emb.title and "Ticket #" in emb.title:
+                        candidate_msg = msg
+                        break
+
+        if candidate_msg is None or not candidate_msg.embeds:
+            return None
+
+        embed = candidate_msg.embeds[0]
+        # Extract category from title like: "🎫 {category} Ticket #{number}"
+        title = embed.title or ""
+        title_no_emoji = re.sub(r"^\s*[\W_]+\s*", "", title)
+        category = title_no_emoji.split(" Ticket #", 1)[0].strip() or "Unknown"
+
+        # Extract requestor id from description
+        requestor_id = None
+        desc = embed.description or ""
+        ids = _parse_user_ids_from_text(desc)
+        if ids:
+            requestor_id = ids[0]
+
+        # Extract helpers from fields
+        helpers = []
+        for f in embed.fields:
+            name = (f.name or "").strip()
+            if "Helper Slot" in name:
+                value = (f.value or "").strip()
+                ids = _parse_user_ids_from_text(value)
+                helpers.append(ids[0] if ids else None)
+
+        if not helpers:
+            # If no helper fields detected, assume default slots
+            helpers = [None] * DEFAULT_SLOTS
+
+        ticket_info = {
+            "category": category,
+            "requestor": requestor_id,
+            "helpers": helpers,
+            "embed_msg": candidate_msg,
+            "closed_stage": 0,
+            "rewarded": None,
+            "answers": {},
+        }
+        return ticket_info
+    except Exception as e:
+        logger.warning(f"Failed to recover ticket in #{channel}: {e}")
+        return None
+
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
         super().__init__(timeout=60)
@@ -796,6 +877,36 @@ class TicketModule(commands.Cog):
             logger.exception(f"Error in give_points: {e}")
             await ctx.respond(f"❌ Error giving points: {e}", ephemeral=True)
 
+    @commands.slash_command(name="reward_here", description="Reward helpers in this ticket channel automatically")
+    async def reward_here(self, ctx: discord.ApplicationContext):
+        if not ctx.user.guild_permissions.manage_messages and not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission.", ephemeral=True)
+            return
+
+        channel_id = ctx.channel.id
+        ticket_info = active_tickets.get(channel_id)
+        if not ticket_info:
+            # Attempt recovery from embed
+            recovered = await recover_ticket_from_channel(ctx.channel)
+            if recovered:
+                active_tickets[channel_id] = recovered
+                ticket_info = recovered
+        if not ticket_info:
+            await ctx.respond("This channel is not a recognized ticket.", ephemeral=True)
+            return
+
+        try:
+            category = ticket_info.get("category")
+            cat_data = await db.get_category(category)
+            fallback_data = get_fallback_category(category)
+            points_value = fallback_data["points"]
+            await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
+            ticket_info["rewarded"] = True
+            await ctx.respond(f"✅ Helpers rewarded for **{category}** (\+{points_value} each).", ephemeral=True)
+        except Exception as e:
+            logger.exception("Error in /reward_here: %s", e)
+            await ctx.respond(f"❌ Error rewarding helpers: {e}", ephemeral=True)
+
     async def _first_close(self, interaction: discord.Interaction, ticket_info):
         """First close: remove helpers/requestor, move to stage 1"""
         try:
@@ -1008,7 +1119,18 @@ class TicketModule(commands.Cog):
                 return
 
         if not ticket_info:
-            return
+            # Try to recover from the channel if this looks like a ticket
+            recovered = None
+            try:
+                if isinstance(interaction.channel, discord.TextChannel):
+                    recovered = await recover_ticket_from_channel(interaction.channel)
+            except Exception:
+                recovered = None
+            if recovered:
+                active_tickets[channel_id] = recovered
+                ticket_info = recovered
+            else:
+                return
         if custom_id == "join_ticket":
             if interaction.user.id == ticket_info["requestor"]:
                 await interaction.response.send_message("You cannot join your own ticket.", ephemeral=True)
