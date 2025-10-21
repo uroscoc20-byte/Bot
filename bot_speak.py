@@ -142,5 +142,27 @@ class TalkModule(commands.Cog):
         # Show modal popup for message composition
         await ctx.response.send_modal(TalkModal(channel_input))
 
+    @commands.slash_command(name="send_message", description="Send a simple message to a channel by ID (admin only)")
+    async def send_message(
+        self,
+        ctx: discord.ApplicationContext,
+        channel_id: discord.Option(int, "Channel ID to send message to"),
+        message: discord.Option(str, "Message to send"),
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission to use this.", ephemeral=True)
+            return
+
+        try:
+            target_channel = ctx.guild.get_channel(channel_id)
+            if not target_channel:
+                await ctx.respond(f"❌ Channel with ID {channel_id} not found.", ephemeral=True)
+                return
+
+            await target_channel.send(message)
+            await ctx.respond(f"✅ Message sent to {target_channel.mention}!", ephemeral=True)
+        except Exception as e:
+            await ctx.respond(f"❌ Failed to send message: {e}", ephemeral=True)
+
 def setup(bot):
     bot.add_cog(TalkModule(bot))
