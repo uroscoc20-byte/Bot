@@ -475,6 +475,25 @@ class Database:
         await self.db.commit()
         return last
 
+    async def set_ticket_number(self, category, number):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("tickets_counter").document(str(category)).set({
+                        "category": category, 
+                        "last_number": int(number)
+                    })
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        await self.db.execute(
+            "INSERT INTO tickets_counter(category, last_number) VALUES (?, ?) "
+            "ON CONFLICT(category) DO UPDATE SET last_number = excluded.last_number",
+            (category, number)
+        )
+        await self.db.commit()
+        return number
+
     # ---------- PERSISTENT PANELS ----------
     async def save_persistent_panel(self, channel_id, message_id, panel_type, data):
         if self.backend == "firestore":

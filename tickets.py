@@ -71,28 +71,50 @@ def bot_can_manage_channels(interaction: discord.Interaction) -> bool:
     return bool(getattr(gp, "administrator", False) or getattr(gp, "manage_channels", False))
 
 # ---------- UTILITY ----------
-async def generate_ticket_transcript(ticket_info, rewarded=False):
+async def generate_ticket_transcript(ticket_info, rewarded=False, closer_id=None):
     channel = ticket_info["embed_msg"].channel
     transcript_lines = []
+    image_urls = []
+    
     async for msg in channel.history(limit=100, oldest_first=True):
         content = msg.content or ""
         transcript_lines.append(f"[{msg.created_at}] {msg.author}: {content}")
+        
+        # Collect image URLs for transcript (RAM optimized - only URLs, not actual images)
+        if msg.attachments:
+            for attachment in msg.attachments:
+                if attachment.content_type and attachment.content_type.startswith('image/'):
+                    image_urls.append(f"[{msg.created_at}] {msg.author}: {attachment.url}")
+        if msg.embeds:
+            for embed in msg.embeds:
+                if embed.image and embed.image.url:
+                    image_urls.append(f"[{msg.created_at}] {msg.author}: {embed.image.url}")
+                if embed.thumbnail and embed.thumbnail.url:
+                    image_urls.append(f"[{msg.created_at}] {msg.author}: {embed.thumbnail.url}")
 
+    closer_info = f"Closed by: <@{closer_id}>" if closer_id else "Closed by: Unknown"
+    
     transcript_text = (
         f"Ticket Transcript for {ticket_info['category']}\n"
         f"Requestor: <@{ticket_info['requestor']}>\n"
         f"Helpers: {', '.join(f'<@{h}>' for h in ticket_info['helpers'] if h)}\n"
         f"Opened at: {channel.created_at}\n"
         f"Closed at: {datetime.utcnow()}\n"
+        f"{closer_info}\n"
         f"Rewarded: {'Yes' if rewarded else 'No'}\n\n"
         + "\n".join(transcript_lines)
     )
+    
+    # Add image URLs section if any were found
+    if image_urls:
+        transcript_text += "\n\n--- IMAGES ---\n" + "\n".join(image_urls)
 
     embed = discord.Embed(
         title="📝 Ticket Transcript",
         description=f"Category: **{ticket_info['category']}**",
         color=discord.Color.blurple(),
     )
+    closer_info = f"<@{closer_id}>" if closer_id else "Unknown"
     embed.add_field(
         name="ℹ️ Info",
         value=(
@@ -100,6 +122,7 @@ async def generate_ticket_transcript(ticket_info, rewarded=False):
             f"Helpers: {', '.join(f'<@{h}>' for h in ticket_info['helpers'] if h) or 'None'}\n"
             f"Opened: {channel.created_at}\n"
             f"Closed: {datetime.utcnow()}\n"
+            f"Closed by: {closer_info}\n"
             f"Rewarded: {'Yes' if rewarded else 'No'}"
         ),
         inline=False,
@@ -116,7 +139,43 @@ async def generate_ticket_transcript(ticket_info, rewarded=False):
         transcript_channel = guild.get_channel(transcript_channel_id)
         if transcript_channel:
             file = discord.File(StringIO(transcript_text), filename=f"transcript-{channel.name}.txt")
+            
+            # Send main transcript
             await transcript_channel.send(embed=embed, file=file)
+            
+            # Send images as separate embeds (Discord allows up to 10 embeds per message)
+            if image_urls:
+                # Split images into chunks of 10 (Discord limit)
+                for i in range(0, len(image_urls), 10):
+                    image_chunk = image_urls[i:i+10]
+                    
+                    # Create image embeds
+                    image_embeds = []
+                    for img_info in image_chunk:
+                        # Parse timestamp and author from the stored format
+                        parts = img_info.split("] ", 1)
+                        if len(parts) == 2:
+                            timestamp_part = parts[0] + "]"
+                            author_and_url = parts[1]
+                            author_part, url = author_and_url.rsplit(": ", 1)
+                            
+                            img_embed = discord.Embed(
+                                title="📷 Image from Ticket",
+                                description=f"**{author_part}**\n{timestamp_part}",
+                                color=discord.Color.blue()
+                            )
+                            img_embed.set_image(url=url)
+                            image_embeds.append(img_embed)
+                    
+                    # Send up to 10 image embeds at once
+                    if image_embeds:
+                        try:
+                            await transcript_channel.send(embeds=image_embeds)
+                        except Exception as e:
+                            logger.warning(f"Failed to send image embeds: {e}")
+                            # Fallback: send as text
+                            fallback_text = "\n".join([f"📷 {img_info}" for img_info in image_chunk])
+                            await transcript_channel.send(f"**Images from ticket:**\n{fallback_text}")
 
 # ---------- TICKET MODAL ----------
 class TicketModal(Modal):
@@ -615,6 +674,70 @@ class TicketModule(commands.Cog):
         where = "embed only" if not from_channel else "embed and channel"
         await ctx.respond(f"Removed {user.mention} from this ticket ({where}).", ephemeral=True)
 
+    @commands.slash_command(name="reset_ticket_counter", description="Reset ticket counter to 1 (admin only)")
+    async def reset_ticket_counter(self, ctx: discord.ApplicationContext):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission to use this.", ephemeral=True)
+            return
+        
+        try:
+            # Reset all category counters to 1
+            categories = ["UltraSpeaker Express", "Ultra Gramiel Express", "Daily 4-Man Express", 
+                         "Daily 7-Man Express", "Weekly Ultra Express", "GrimChallenge Express", "Daily Temple Express"]
+            
+            for category in categories:
+                await db.set_ticket_number(category, 1)
+            
+            await ctx.respond("✅ Ticket counter reset to 1 for all categories.", ephemeral=True)
+        except Exception as e:
+            logger.exception(f"Error resetting ticket counter: {e}")
+            await ctx.respond(f"❌ Error resetting counter: {e}", ephemeral=True)
+
+    @commands.slash_command(name="reward_helpers", description="Manually reward helpers for a ticket (admin only)")
+    async def reward_helpers(
+        self,
+        ctx: discord.ApplicationContext,
+        ticket_channel: discord.Option(discord.TextChannel, "Ticket channel to reward"),
+        points: discord.Option(int, "Points to give each helper", required=False)
+    ):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission to use this.", ephemeral=True)
+            return
+        
+        channel_id = ticket_channel.id
+        ticket_info = active_tickets.get(channel_id)
+        if not ticket_info:
+            await ctx.respond("This is not an active ticket channel.", ephemeral=True)
+            return
+        
+        try:
+            category = ticket_info["category"]
+            cat_data = await db.get_category(category)
+            fallback_data = get_fallback_category(category)
+            
+            # Use provided points or fallback to default
+            if points is not None and points > 0:
+                points_value = points
+            else:
+                points_value = fallback_data["points"]
+            
+            if points_value <= 0:
+                await ctx.respond(f"❌ No valid points value found for category '{category}'. Please specify points manually.", ephemeral=True)
+                return
+            
+            # Reward helpers
+            await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
+            
+            # Generate transcript with reward info
+            await generate_ticket_transcript(ticket_info, rewarded=True, closer_id=ctx.user.id)
+            
+            ticket_info["rewarded"] = True
+            await ctx.respond(f"✅ Rewarded helpers with {points_value} points each and generated transcript.", ephemeral=True)
+            
+        except Exception as e:
+            logger.exception(f"Error in manual reward: {e}")
+            await ctx.respond(f"❌ Error rewarding helpers: {e}", ephemeral=True)
+
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
         if interaction.type != discord.InteractionType.component:
@@ -701,6 +824,13 @@ class TicketModule(commands.Cog):
             if any(rid in member_role_ids for rid in restricted_ids):
                 await interaction.response.send_message("You cannot join this ticket.", ephemeral=True)
                 return
+            
+            # Check if user is already helping in another ticket
+            for ticket_id, other_ticket in active_tickets.items():
+                if ticket_id != channel_id and interaction.user.id in [h for h in other_ticket["helpers"] if h]:
+                    await interaction.response.send_message("You can only join one ticket at a time. Leave your current ticket first.", ephemeral=True)
+                    return
+            
             # Prevent duplicate joins and enforce capacity
             if interaction.user.id in [h for h in ticket_info["helpers"] if h]:
                 await interaction.response.send_message("You are already listed as a helper on this ticket.", ephemeral=True)
@@ -792,135 +922,109 @@ class TicketModule(commands.Cog):
             if not (is_staff or is_requestor):
                 await interaction.response.send_message("Only staff, admins, or the requestor can close this ticket.", ephemeral=True)
                 return
-            stage = ticket_info.get("closed_stage", 0)
-            if stage == 0:
-                # First close: kick all helpers and requestor, move to stage 1
-                try:
-                    removed_users = []
-                    
-                    # Remove all helpers who joined via button (except staff/admin)
-                    roles_cfg = await db.get_roles()
-                    staff_role_id = roles_cfg.get("staff") if roles_cfg else None
-                    admin_role_id = roles_cfg.get("admin") if roles_cfg else None
-                    staff_role = interaction.guild.get_role(staff_role_id) if staff_role_id else None
-                    admin_role = interaction.guild.get_role(admin_role_id) if admin_role_id else None
-                    
-                    for helper_id in ticket_info["helpers"]:
-                        if helper_id:
-                            try:
-                                helper = interaction.guild.get_member(helper_id)
-                                if helper:
-                                    # Check if helper has staff or admin role (immune to removal)
-                                    is_staff = False
-                                    if staff_role and staff_role in helper.roles:
-                                        is_staff = True
-                                    if admin_role and admin_role in helper.roles:
-                                        is_staff = True
-                                    if helper.guild_permissions.administrator:
-                                        is_staff = True
-                                    
-                                    if not is_staff:
-                                        await interaction.channel.set_permissions(helper, view_channel=False, send_messages=False)
-                                        removed_users.append(f"Helper: {helper.display_name}")
-                                    else:
-                                        removed_users.append(f"Helper: {helper.display_name} (STAFF - kept in channel)")
-                            except Exception:
-                                pass
-                    
-                    # Remove all members with helper role
-                    helper_role_id = roles_cfg.get("helper") if roles_cfg else None
-                    if helper_role_id:
-                        helper_role = interaction.guild.get_role(helper_role_id)
-                        if helper_role:
-                            # Remove helper role permissions from channel
-                            try:
-                                await interaction.channel.set_permissions(helper_role, view_channel=False, send_messages=False)
-                                removed_users.append(f"Helper Role: {helper_role.name} (role permissions removed)")
-                            except Exception:
-                                pass
-                            
-                            # Remove individual members with helper role (except staff/admin)
-                            staff_role_id = roles_cfg.get("staff") if roles_cfg else None
-                            admin_role_id = roles_cfg.get("admin") if roles_cfg else None
-                            staff_role = interaction.guild.get_role(staff_role_id) if staff_role_id else None
-                            admin_role = interaction.guild.get_role(admin_role_id) if admin_role_id else None
-                            
-                            for member in interaction.channel.members:
-                                if helper_role in member.roles:
-                                    # Check if member has staff or admin role (immune to removal)
-                                    is_staff = False
-                                    if staff_role and staff_role in member.roles:
-                                        is_staff = True
-                                    if admin_role and admin_role in member.roles:
-                                        is_staff = True
-                                    if member.guild_permissions.administrator:
-                                        is_staff = True
-                                    
-                                    if not is_staff:
-                                        try:
-                                            await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
-                                            removed_users.append(f"Helper Role Member: {member.display_name}")
-                                        except Exception:
-                                            pass
-                                    else:
-                                        removed_users.append(f"Helper Role Member: {member.display_name} (STAFF - kept in channel)")
-                    
-                    # Remove requestor (unless they have staff/admin role)
-                    try:
-                        requestor = interaction.guild.get_member(ticket_info["requestor"])
-                        if requestor:
-                            # Check if requestor has staff or admin role (immune to removal)
-                            is_staff = False
-                            if staff_role and staff_role in requestor.roles:
-                                is_staff = True
-                            if admin_role and admin_role in requestor.roles:
-                                is_staff = True
-                            if requestor.guild_permissions.administrator:
-                                is_staff = True
-                            
-                            if not is_staff:
-                                await interaction.channel.set_permissions(requestor, view_channel=False, send_messages=False)
-                                removed_users.append(f"Requestor: {requestor.display_name}")
-                            else:
-                                removed_users.append(f"Requestor: {requestor.display_name} (STAFF - kept in channel)")
-                    except Exception:
-                        pass
-                    
-                    # Move to stage 1
-                    ticket_info["closed_stage"] = 1
-                    
-                    removed_text = "\n".join(removed_users) if removed_users else "No users to remove"
-                    await interaction.response.send_message(f"✅ Ticket closed. Removed from channel:\n{removed_text}", ephemeral=True)
-                    
-                except Exception as e:
-                    logger.exception(f"Error during first close: {e}")
-                    await interaction.response.send_message("⚠️ Error closing ticket. Please try again.", ephemeral=True)
-            elif stage == 1:
-                # Only staff/admin can decide rewards
+            # Simplified closing: remove helpers/requestor, generate transcript, delete channel
+            try:
+                removed_users = []
+                
+                # Remove all helpers who joined via button (except staff/admin)
                 roles_cfg = await db.get_roles()
                 staff_role_id = roles_cfg.get("staff") if roles_cfg else None
                 admin_role_id = roles_cfg.get("admin") if roles_cfg else None
-                is_staff = interaction.user.guild_permissions.administrator
-                if admin_role_id:
-                    is_staff = is_staff or any(r.id == admin_role_id for r in interaction.user.roles)
-                if staff_role_id:
-                    is_staff = is_staff or any(r.id == staff_role_id for r in interaction.user.roles)
-                if not is_staff:
-                    await interaction.response.send_message("Only staff/admin can decide rewards.", ephemeral=True)
-                    return
-                # Prevent double reward prompt if already decided
-                if ticket_info.get("rewarded") is not None:
-                    await interaction.response.send_message("Reward decision already made.", ephemeral=True)
-                    return
-                view = RewardChoiceView(interaction.channel.id)
-                await interaction.response.send_message("Reward helpers?", view=view, ephemeral=True)
-            else:
-                await interaction.response.send_message("Deleting ticket channel...", ephemeral=True)
+                staff_role = interaction.guild.get_role(staff_role_id) if staff_role_id else None
+                admin_role = interaction.guild.get_role(admin_role_id) if admin_role_id else None
+                
+                for helper_id in ticket_info["helpers"]:
+                    if helper_id:
+                        try:
+                            helper = interaction.guild.get_member(helper_id)
+                            if helper:
+                                # Check if helper has staff or admin role (immune to removal)
+                                is_staff = False
+                                if staff_role and staff_role in helper.roles:
+                                    is_staff = True
+                                if admin_role and admin_role in helper.roles:
+                                    is_staff = True
+                                if helper.guild_permissions.administrator:
+                                    is_staff = True
+                                
+                                if not is_staff:
+                                    await interaction.channel.set_permissions(helper, view_channel=False, send_messages=False)
+                                    removed_users.append(f"Helper: {helper.display_name}")
+                                else:
+                                    removed_users.append(f"Helper: {helper.display_name} (STAFF - kept in channel)")
+                        except Exception:
+                            pass
+                
+                # Remove all members with helper role
+                helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+                if helper_role_id:
+                    helper_role = interaction.guild.get_role(helper_role_id)
+                    if helper_role:
+                        # Remove helper role permissions from channel
+                        try:
+                            await interaction.channel.set_permissions(helper_role, view_channel=False, send_messages=False)
+                            removed_users.append(f"Helper Role: {helper_role.name} (role permissions removed)")
+                        except Exception:
+                            pass
+                        
+                        # Remove individual members with helper role (except staff/admin)
+                        for member in interaction.channel.members:
+                            if helper_role in member.roles:
+                                # Check if member has staff or admin role (immune to removal)
+                                is_staff = False
+                                if staff_role and staff_role in member.roles:
+                                    is_staff = True
+                                if admin_role and admin_role in member.roles:
+                                    is_staff = True
+                                if member.guild_permissions.administrator:
+                                    is_staff = True
+                                
+                                if not is_staff:
+                                    try:
+                                        await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
+                                        removed_users.append(f"Helper Role Member: {member.display_name}")
+                                    except Exception:
+                                        pass
+                                else:
+                                    removed_users.append(f"Helper Role Member: {member.display_name} (STAFF - kept in channel)")
+                
+                # Remove requestor (unless they have staff/admin role)
+                try:
+                    requestor = interaction.guild.get_member(ticket_info["requestor"])
+                    if requestor:
+                        # Check if requestor has staff or admin role (immune to removal)
+                        is_staff = False
+                        if staff_role and staff_role in requestor.roles:
+                            is_staff = True
+                        if admin_role and admin_role in requestor.roles:
+                            is_staff = True
+                        if requestor.guild_permissions.administrator:
+                            is_staff = True
+                        
+                        if not is_staff:
+                            await interaction.channel.set_permissions(requestor, view_channel=False, send_messages=False)
+                            removed_users.append(f"Requestor: {requestor.display_name}")
+                        else:
+                            removed_users.append(f"Requestor: {requestor.display_name} (STAFF - kept in channel)")
+                except Exception:
+                    pass
+                
+                # Generate transcript (no auto-reward)
+                await generate_ticket_transcript(ticket_info, rewarded=False, closer_id=interaction.user.id)
+                
+                removed_text = "\n".join(removed_users) if removed_users else "No users to remove"
+                await interaction.response.send_message(f"✅ Ticket closed. Removed from channel:\n{removed_text}\n\nTranscript generated. Use `/reward_helpers` to manually reward helpers.", ephemeral=True)
+                
+                # Delete channel after a short delay
                 active_tickets.pop(channel_id, None)
                 try:
                     await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
                 except Exception:
                     pass
+                    
+            except Exception as e:
+                logger.exception(f"Error during ticket close: {e}")
+                await interaction.response.send_message("⚠️ Error closing ticket. Please try again.", ephemeral=True)
 
 def setup(bot):
     bot.add_cog(TicketModule(bot))
