@@ -413,19 +413,40 @@ class TicketModule(commands.Cog):
             } for name in DEFAULT_POINT_VALUES.keys()]
         panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
-        embed = discord.Embed(
-            title="🎮 In-game Assistance",
-            description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
-            color=panel_cfg.get("color", 0x5865F2),
-        )
-        services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
-        embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
-        embed.add_field(
-            name="ℹ️ How it works",
-            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
-            inline=False,
-        )
-        await ctx.respond(embed=embed, view=view)
+ embed = discord.Embed(
+    title="🚂 CHOOSE YOUR TICKET TYPE 💨",
+    description="**Pick the ticket type that fits your request📜**\n-# https://discord.com/channels/1345073229026562079/1358536986679443496\n-------------------------------------------------------",
+    color=panel_cfg.get("color", 0x5865F2),
+)
+
+service_descriptions = {
+    "Ultra Speaker Express": "-# - The First Speaker",
+    "Ultra Gramiel Express": "-# - Ultra Gramiel",
+    "4-Man Ultra Daily Express": "-# - Daily 4-Man Ultra Bosses",
+    "7-Man Ultra Daily Express": "-# - Daily 7-Man Ultra Bosses",
+    "Ultra Weekly Express": "-# - Weekly Ultra Bosses (excluding speaker, grim and gramiel)",
+    "Grim Express": "-# - Mechabinky & Raxborg 2.0",
+    "Daily Temple Express": "-# - Daily TempleShrine",
+}
+
+for cat in categories:
+    name = cat["name"]
+    desc = service_descriptions.get(name, "")
+    embed.add_field(name=f"**{name}**", value=desc, inline=False)
+
+embed.add_field(
+    name="-------------------------------------------------------\n## How it works 📢",
+    value=(
+        "1. ✅ Select a \"ticket type\"\n"
+        "2. 📝 Fill out the form\n"
+        "3. 💁 Helpers join\n"
+        "4. 🎉 Get help in your private ticket"
+    ),
+    inline=False
+)
+
+view = TicketPanelView(categories)
+await ctx.respond(embed=embed, view=view)
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
     async def ticket_kick(
