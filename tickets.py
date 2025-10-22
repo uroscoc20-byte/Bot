@@ -124,6 +124,19 @@ class TicketModal(Modal):
             pass
 
         try:
+            # Validate input fields
+            for ti in self.inputs:
+                label_clean = (ti.label or "").strip()
+                label_lower = label_clean.lower()
+                value_text = (ti.value or "").strip()
+                
+                if value_text and value_text != "—":
+                    if label_lower.startswith("server name") or label_lower.startswith("anything else"):
+                        # Server name and Anything else fields - no numbers allowed
+                        if any(char.isdigit() for char in value_text):
+                            await interaction.followup.send(f"❌ {label_clean} field cannot contain numbers.", ephemeral=True)
+                            return
+                    # Room and In-game name fields allow both letters and numbers (no validation needed)
             if not bot_can_manage_channels(interaction):
                 await interaction.followup.send(
                     "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
@@ -196,10 +209,8 @@ class TicketModal(Modal):
                     # Fallback for any additional custom questions
                     form_answers[label_lower] = value_text
 
-                # Show all fields on embed except "Room" and "Anything else" which should be hidden until joining
+                # Show all fields on embed except "Room" which should be hidden until joining
                 if label_lower.startswith("room"):
-                    embed.add_field(name=label_clean, value="Revealed after joining", inline=False)
-                elif label_lower.startswith("anything else"):
                     embed.add_field(name=label_clean, value="Revealed after joining", inline=False)
                 else:
                     embed.add_field(name=label_clean, value=value_text, inline=False)
