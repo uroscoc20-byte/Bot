@@ -15,49 +15,48 @@ if not TOKEN:
 # ---------- BOT INTENTS ----------
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True  # needed for verification/tickets
 bot = commands.Bot(command_prefix="/", intents=intents)
 
 # ---------- EVENTS ----------
 @bot.event
 async def on_ready():
+    print(f"✅ Bot logged in as {bot.user} ({bot.user.id})")
     try:
+        # Sync slash commands globally
         if hasattr(bot, "tree"):
             await bot.tree.sync()
-        if hasattr(bot, "sync_commands"):
-            await bot.sync_commands()
-        print("✅ Slash commands synced.")
-        
-        # Restore persistent panels
-        try:
-            persistent_panels_cog = bot.get_cog("PersistentPanels")
-            if persistent_panels_cog:
-                await persistent_panels_cog.restore_persistent_panels()
-                print("✅ Persistent panels restored.")
-        except Exception as e:
-            print(f"❌ Failed to restore persistent panels: {e}")
-            
-    except Exception as e:
-        print(f"❌ Slash command sync failed: {e}")
+        print("✅ Slash commands synced globally.")
 
-# ---------- EXTENSIONS ----------
+        # Restore persistent panels (leaderboard, ticket, verification, etc.)
+        persistent_panels_cog = bot.get_cog("PersistentPanels")
+        if persistent_panels_cog:
+            await persistent_panels_cog.restore_persistent_panels()
+            print("✅ Persistent panels restored.")
+    except Exception as e:
+        print(f"❌ Error in on_ready: {e}")
+
+# ---------- EXTENSIONS / COGS ----------
 initial_extensions = [
     "setup",
-    "tickets",
-    "points",
-    "custom_commands",
-    "custom_simple",  # manage !custom text commands and edit via modal
-    "audit_log",      # log slash and prefix commands
-    "verification",   # verification panel/tickets
-    "persistent_panels",  # persistent panels with auto-refresh
-    "bot_speak",  # optional
-    "guild_control"  # home guild enforcement and leave commands
+    "tickets",            # ticket system + ticket panels
+    "points",             # user points & leaderboard
+    "custom_commands",    # manage custom commands
+    "custom_simple",      # modal-based custom command editing
+    "audit_log",          # logs command usage
+    "verification",       # verification panel & tickets
+    "persistent_panels",  # persistent leaderboard / ticket / verification panels
+    "bot_speak",          # /talk and any chat commands
+    "guild_control",      # home guild enforcement & leave commands
 ]
 
 # ---------- ASYNC MAIN ----------
 async def main():
+    # Initialize database (SQLite or Firestore)
     await db.init()
     print("✅ Database initialized.")
 
+    # Load all extensions / cogs
     for ext in initial_extensions:
         try:
             bot.load_extension(ext)
@@ -65,9 +64,14 @@ async def main():
         except Exception as e:
             print(f"❌ Failed to load extension {ext}: {e}")
 
-    webserver.start()
-    print("✅ Webserver started for Render healthchecks.")
+    # Start webserver for healthchecks
+    try:
+        webserver.start()
+        print("✅ Webserver started for Render healthchecks.")
+    except Exception as e:
+        print(f"❌ Failed to start webserver: {e}")
 
+    # Start bot
     await bot.start(TOKEN)
 
 # ---------- RUN ----------
