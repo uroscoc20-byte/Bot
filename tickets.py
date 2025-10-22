@@ -9,15 +9,15 @@ from io import StringIO
 
 # ---------- DEFAULTS ----------
 DEFAULT_POINT_VALUES = {
-    "Ultra Speaker Express": 8,
+    "UltraSpeaker Express": 8,
     "Ultra Gramiel Express": 7,
-    "4-Man Ultra Daily Express": 4,
-    "7-Man Ultra Daily Express": 10,
-    "Ultra Weekly Express": 12,
-    "Grim Express": 10,
+    "Daily 4-Man Express": 4,
+    "Daily 7-Man Express": 10,
+    "Weekly Ultra Express": 12,
+    "GrimChallenge Express": 10,
     "Daily Temple Express": 6,
 }
-DEFAULT_HELPER_SLOTS = {"7-Man Ultra Daily Express": 6, "Grim Express": 6}
+DEFAULT_HELPER_SLOTS = {"Daily 7-Man Express": 6, "GrimChallenge Express": 6}
 DEFAULT_SLOTS = 3
 DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room?*", "Anything else?"]
 
@@ -413,40 +413,40 @@ class TicketModule(commands.Cog):
             } for name in DEFAULT_POINT_VALUES.keys()]
         panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
- embed = discord.Embed(
-    title="🚂 CHOOSE YOUR TICKET TYPE 💨",
-    description="**Pick the ticket type that fits your request📜**\n-# https://discord.com/channels/1345073229026562079/1358536986679443496\n-------------------------------------------------------",
-    color=panel_cfg.get("color", 0x5865F2),
-)
+        
+        embed = discord.Embed(
+            title="🚂 CHOOSE YOUR TICKET TYPE �",
+            description="**Pick the ticket type that fits your request📜**\n-# https://discord.com/channels/1345073229026562079/1358536986679443496\n-------------------------------------------------------",
+            color=panel_cfg.get("color", 0x5865F2),
+        )
 
-service_descriptions = {
-    "Ultra Speaker Express": "-# - The First Speaker",
-    "Ultra Gramiel Express": "-# - Ultra Gramiel",
-    "4-Man Ultra Daily Express": "-# - Daily 4-Man Ultra Bosses",
-    "7-Man Ultra Daily Express": "-# - Daily 7-Man Ultra Bosses",
-    "Ultra Weekly Express": "-# - Weekly Ultra Bosses (excluding speaker, grim and gramiel)",
-    "Grim Express": "-# - Mechabinky & Raxborg 2.0",
-    "Daily Temple Express": "-# - Daily TempleShrine",
-}
+        service_descriptions = {
+            "UltraSpeaker Express": "-# - The First Speaker",
+            "Ultra Gramiel Express": "-# - Ultra Gramiel", 
+            "Daily 4-Man Express": "-# - Daily 4-Man Ultra Bosses",
+            "Daily 7-Man Express": "-# - Daily 7-Man Ultra Bosses",
+            "Weekly Ultra Express": "-# - Weekly Ultra Bosses (excluding speaker, grim and gramiel)",
+            "GrimChallenge Express": "-# - Mechabinky & Raxborg 2.0",
+            "Daily Temple Express": "-# - Daily TempleShrine",
+        }
 
-for cat in categories:
-    name = cat["name"]
-    desc = service_descriptions.get(name, "")
-    embed.add_field(name=f"**{name}**", value=desc, inline=False)
+        for cat in categories:
+            name = cat["name"]
+            desc = service_descriptions.get(name, "")
+            embed.add_field(name=f"**{name}**", value=desc, inline=False)
 
-embed.add_field(
-    name="-------------------------------------------------------\n## How it works 📢",
-    value=(
-        "1. ✅ Select a \"ticket type\"\n"
-        "2. 📝 Fill out the form\n"
-        "3. 💁 Helpers join\n"
-        "4. 🎉 Get help in your private ticket"
-    ),
-    inline=False
-)
+        embed.add_field(
+            name="-------------------------------------------------------\n## How it works📢",
+            value=(
+                "1. ✅ Select a \"ticket type\"\n"
+                "2. 📝 Fill out the form\n"
+                "3. 💁 Helpers join\n"
+                "4. 🎉 Get help in your private ticket and you can see how questions and answers work on making tickets I want to make anything else work same way as room? question"
+            ),
+            inline=False
+        )
 
-view = TicketPanelView(categories)
-await ctx.respond(embed=embed, view=view)
+        await ctx.respond(embed=embed, view=view)
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
     async def ticket_kick(
