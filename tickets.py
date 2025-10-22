@@ -196,8 +196,10 @@ class TicketModal(Modal):
                     # Fallback for any additional custom questions
                     form_answers[label_lower] = value_text
 
-                # Show all fields on embed except "Room" which should be hidden until joining
+                # Show all fields on embed except "Room" and "Anything else" which should be hidden until joining
                 if label_lower.startswith("room"):
+                    embed.add_field(name=label_clean, value="Revealed after joining", inline=False)
+                elif label_lower.startswith("anything else"):
                     embed.add_field(name=label_clean, value="Revealed after joining", inline=False)
                 else:
                     embed.add_field(name=label_clean, value=value_text, inline=False)
