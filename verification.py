@@ -118,6 +118,13 @@ class VerificationModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Add persistent views when bot starts"""
+        # Add persistent views so they work after bot restarts
+        self.bot.add_view(VerificationPanelView(None))  # None category for persistent view
+        self.bot.add_view(VerificationTicketView())  # Persistent verification ticket view
+
     @commands.slash_command(name="verification_panel", description="Post verification panel (Admin/Staff).")
     async def verification_panel(
         self,

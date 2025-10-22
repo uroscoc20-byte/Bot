@@ -307,7 +307,7 @@ class TicketView(View):
 
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)
         self.ticket_channel_id = ticket_channel_id
 
     @discord.ui.button(label="Reward helpers", style=discord.ButtonStyle.green, custom_id="reward_yes")
@@ -378,6 +378,14 @@ class TicketPanelView(View):
 class TicketModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Add persistent views when bot starts"""
+        # Add persistent views so they work after bot restarts
+        self.bot.add_view(TicketPanelView([]))  # Empty categories for now, will be populated when used
+        self.bot.add_view(TicketView("", 0))  # Empty category and requestor for persistent view
+        self.bot.add_view(RewardChoiceView(0))  # Empty channel ID for persistent view
 
     @commands.slash_command(name="panel", description="Deploy ticket panel (staff/admin only)")
     async def panel(self, ctx: discord.ApplicationContext):
