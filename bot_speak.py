@@ -1,12 +1,11 @@
-# bot_speak.py
 import discord
 from discord.ext import commands
-from discord.ui import Modal, InputText
+from discord.ui import View, Button, Modal, InputText
 
 def parse_color(color_str: str, default: int = 0x5865F2) -> int:
-    if not color_str:
-        return default
     try:
+        if not color_str:
+            return default
         s = color_str.strip()
         if s.lower().startswith("0x"):
             return int(s, 16)
@@ -14,155 +13,121 @@ def parse_color(color_str: str, default: int = 0x5865F2) -> int:
     except Exception:
         return default
 
+
+# ----- Confirmation View (Send / Cancel buttons) -----
+class ConfirmView(View):
+    def __init__(self, target_channel: discord.abc.Messageable, embed: discord.Embed):
+        super().__init__(timeout=60)
+        self.target_channel = target_channel
+        self.embed = embed
+        self.sent = False
+
+    @discord.ui.button(label="✅ Send Message", style=discord.ButtonStyle.success)
+    async def confirm(self, button: Button, interaction: discord.Interaction):
+        try:
+            await self.target_channel.send(embed=self.embed)
+            await interaction.response.edit_message(
+                content=f"✅ Message sent to {self.target_channel.mention}!",
+                view=None,
+                embed=None,
+            )
+            self.sent = True
+        except Exception as e:
+            await interaction.response.edit_message(content=f"❌ Failed to send: {e}", view=None)
+            self.sent = True
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger)
+    async def cancel(self, button: Button, interaction: discord.Interaction):
+        await interaction.response.edit_message(content="❌ Cancelled.", view=None, embed=None)
+        self.sent = True
+
+
+# ----- Modal to collect message info -----
 class TalkModal(Modal):
-    def __init__(self, channel_input: str):
-        super().__init__(title="Bot Speak")
-        self.channel_input = channel_input
-        
-        self.content = InputText(
-            label="Message Content*",
-            placeholder="Type your message here...",
-            style=discord.InputTextStyle.long,
-            required=True,
-            max_length=4000
-        )
-        self.image_url = InputText(
-            label="Image URL",
-            placeholder="Optional image URL",
-            style=discord.InputTextStyle.short,
-            required=False
-        )
-        self.embed_title = InputText(
-            label="Embed Title",
-            placeholder="Optional embed title",
-            style=discord.InputTextStyle.short,
-            required=False
-        )
-        self.embed_color = InputText(
-            label="Embed Color",
-            placeholder="Hex color like #5865F2",
-            style=discord.InputTextStyle.short,
-            required=False
-        )
-        self.embed_footer = InputText(
-            label="Embed Footer",
-            placeholder="Optional footer text",
-            style=discord.InputTextStyle.short,
-            required=False
-        )
-        self.thumbnail_url = InputText(
-            label="Thumbnail URL",
-            placeholder="Optional thumbnail URL",
-            style=discord.InputTextStyle.short,
-            required=False
-        )
-        
+    def __init__(self):
+        super().__init__(title="Compose Message")
+
+        self.channel = InputText(label="Channel (name or ID)", required=True)
+        self.content = InputText(label="Message Content", style=discord.InputTextStyle.long, required=False)
+        self.image_url = InputText(label="Image URL (optional)", required=False)
+        self.embed_title = InputText(label="Embed Title (optional)", required=False)
+        self.embed_color = InputText(label="Embed Color (#5865F2 by default)", required=False)
+        self.embed_footer = InputText(label="Footer Text (optional)", required=False)
+
+        self.add_item(self.channel)
         self.add_item(self.content)
         self.add_item(self.image_url)
         self.add_item(self.embed_title)
         self.add_item(self.embed_color)
         self.add_item(self.embed_footer)
-        self.add_item(self.thumbnail_url)
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.defer(ephemeral=True)
-        except Exception:
-            pass
-
         guild = interaction.guild
-        target_channel = None
+        channel_input = self.channel.value.strip()
+        content = self.content.value.strip()
+        image_url = self.image_url.value.strip()
+        embed_title = self.embed_title.value.strip()
+        embed_color = self.embed_color.value.strip()
+        embed_footer = self.embed_footer.value.strip()
 
-        if self.channel_input.isdigit():
-            cid = int(self.channel_input)
-            target_channel = guild.get_channel(cid) or guild.get_thread(cid)
-        if not target_channel:
+        # Find target channel or thread
+        target = None
+        if channel_input.isdigit():
+            target = guild.get_channel(int(channel_input)) or guild.get_thread(int(channel_input))
+        else:
             for ch in guild.channels:
-                if hasattr(ch, "name") and ch.name == self.channel_input:
-                    target_channel = ch
+                if hasattr(ch, "name") and ch.name == channel_input:
+                    target = ch
                     break
 
-        if not target_channel:
-            await interaction.followup.send("Channel not found.", ephemeral=True)
+        if not target:
+            await interaction.response.send_message("❌ Channel or thread not found.", ephemeral=True)
             return
 
-        content = self.content.value or ""
-        image_url = self.image_url.value or ""
-        embed_title = self.embed_title.value or ""
-        embed_color = self.embed_color.value or ""
-        embed_footer = self.embed_footer.value or ""
-        thumbnail_url = self.thumbnail_url.value or ""
-
-        # Send as embed by default
-        color_value = parse_color(embed_color, default=0x5865F2)
+        # Build the embed preview
         embed = discord.Embed(
-            title=embed_title if embed_title else None,
-            description=content,
-            color=color_value,
+            title=embed_title or None,
+            description=content or None,
+            color=parse_color(embed_color),
         )
-        if embed_footer:
-            embed.set_footer(text=embed_footer)
-        if thumbnail_url:
-            embed.set_thumbnail(url=thumbnail_url)
         if image_url:
             embed.set_image(url=image_url)
-        
-        try:
-            await target_channel.send(embed=embed)
-            await interaction.followup.send(f"✅ Message sent to {target_channel.mention}!", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"Failed to send message: {e}", ephemeral=True)
+        if embed_footer:
+            embed.set_footer(text=embed_footer)
 
-    async def callback(self, interaction: discord.Interaction):
-        try:
-            await self.on_submit(interaction)
-        except Exception as e:
-            try:
-                if interaction.response.is_done():
-                    await interaction.followup.send("⚠️ Error sending message.", ephemeral=True)
-                else:
-                    await interaction.response.send_message("⚠️ Error sending message.", ephemeral=True)
-            except Exception:
-                pass
+        # Send ephemeral preview with confirmation buttons
+        view = ConfirmView(target_channel=target, embed=embed)
+        await interaction.response.send_message(
+            content=f"📋 **Preview:**\nChannel: {target.mention}",
+            embed=embed,
+            view=view,
+            ephemeral=True,
+        )
 
+
+# ----- Button view to start the process -----
+class TalkView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="📝 Create Message", style=discord.ButtonStyle.blurple)
+    async def create_message(self, button: Button, interaction: discord.Interaction):
+        await interaction.response.send_modal(TalkModal())
+
+
+# ----- Cog setup -----
 class TalkModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.slash_command(name="talk", description="Bot sends a message in specified channel/thread")
-    async def talk(
-        self,
-        ctx: discord.ApplicationContext,
-        channel_input: discord.Option(str, "Channel or thread ID or name"),
-    ):
+    @commands.slash_command(name="talk", description="Compose and send a bot message with preview")
+    async def talk(self, ctx: discord.ApplicationContext):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You do not have permission to use this.", ephemeral=True)
             return
 
-        # Show modal popup for message composition
-        await ctx.response.send_modal(TalkModal(channel_input))
+        await ctx.respond("Click below to compose a message:", view=TalkView(), ephemeral=True)
 
-    @commands.slash_command(name="send_message", description="Send a simple message to a channel by ID (admin only)")
-    async def send_message(
-        self,
-        ctx: discord.ApplicationContext,
-        channel_id: discord.Option(int, "Channel ID to send message to"),
-        message: discord.Option(str, "Message to send"),
-    ):
-        if not ctx.user.guild_permissions.administrator:
-            await ctx.respond("You do not have permission to use this.", ephemeral=True)
-            return
-
-        try:
-            target_channel = ctx.guild.get_channel(channel_id)
-            if not target_channel:
-                await ctx.respond(f"❌ Channel with ID {channel_id} not found.", ephemeral=True)
-                return
-
-            await target_channel.send(message)
-            await ctx.respond(f"✅ Message sent to {target_channel.mention}!", ephemeral=True)
-        except Exception as e:
-            await ctx.respond(f"❌ Failed to send message: {e}", ephemeral=True)
 
 def setup(bot):
     bot.add_cog(TalkModule(bot))
