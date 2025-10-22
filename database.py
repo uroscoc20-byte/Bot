@@ -475,56 +475,6 @@ class Database:
         await self.db.commit()
         return last
 
-    async def set_ticket_number(self, category, number):
-        if self.backend == "firestore":
-            try:
-                def _op():
-                    self.fs.collection("tickets_counter").document(str(category)).set({
-                        "category": category, 
-                        "last_number": int(number)
-                    })
-                return await self._fs_run(_op)
-            except Exception as e:
-                await self._fallback_to_sqlite(str(e))
-        await self.db.execute(
-            "INSERT INTO tickets_counter(category, last_number) VALUES (?, ?) "
-            "ON CONFLICT(category) DO UPDATE SET last_number = excluded.last_number",
-            (category, number)
-        )
-        await self.db.commit()
-        return number
-
-    async def get_global_ticket_number(self):
-        """Get the next global ticket number (not category-specific)"""
-        if self.backend == "firestore":
-            try:
-                def _op():
-                    doc = self.fs.collection("global_ticket_counter").document("counter")
-                    snap = doc.get()
-                    last = 0
-                    if snap.exists:
-                        data = snap.to_dict() or {}
-                        last = int(data.get("last_number", 0))
-                    last += 1
-                    doc.set({"last_number": last})
-                    return last
-                return await self._fs_run(_op)
-            except Exception as e:
-                await self._fallback_to_sqlite(str(e))
-        
-        # SQLite fallback
-        cursor = await self.db.execute("SELECT last_number FROM global_ticket_counter WHERE id = 1")
-        row = await cursor.fetchone()
-        last = row[0] if row else 0
-        last += 1
-        await self.db.execute(
-            "INSERT INTO global_ticket_counter(id, last_number) VALUES (1, ?) "
-            "ON CONFLICT(id) DO UPDATE SET last_number = excluded.last_number",
-            (last,)
-        )
-        await self.db.commit()
-        return last
-
     # ---------- PERSISTENT PANELS ----------
     async def save_persistent_panel(self, channel_id, message_id, panel_type, data):
         if self.backend == "firestore":

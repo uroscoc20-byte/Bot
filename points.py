@@ -14,28 +14,11 @@ class PointsModule(commands.Cog):
         helpers = [h for h in ticket_info.get("helpers", []) if h]
         category = ticket_info.get("category")
         points = ticket_info.get("points", 10)
-        
-        print(f"[POINTS DEBUG] Rewarding {len(helpers)} helpers for {category} ticket with {points} points each")
-        print(f"[POINTS DEBUG] Helper IDs: {helpers}")
-        
-        if not helpers:
-            print("[POINTS DEBUG] No helpers to reward!")
-            return
-            
         for uid in helpers:
-            try:
-                current = await db.get_points(uid)
-                new_total = current + points
-                await db.set_points(uid, new_total)
-                print(f"[POINTS DEBUG] User {uid}: {current} -> {new_total} points")
-            except Exception as e:
-                print(f"[POINTS DEBUG] Error rewarding user {uid}: {e}")
-                
-        try:
-            channel = ticket_info.get("embed_msg").channel
-            await channel.send(f"🏆 **Helpers have been rewarded for {category} ticket!**\n💰 **{points} points** given to each helper")
-        except Exception as e:
-            print(f"[POINTS DEBUG] Error sending reward message: {e}")
+            current = await db.get_points(uid)
+            await db.set_points(uid, current + points)
+        channel = ticket_info.get("embed_msg").channel
+        await channel.send(f"Helpers have been rewarded for **{category}** ticket!")
 
     @commands.slash_command(name="points", description="Check your points or another user's points")
     async def points(
@@ -59,7 +42,7 @@ class PointsModule(commands.Cog):
         page: discord.Option(int, "Page number", required=False, default=1),
     ):
         rows = await db.get_leaderboard()
-        per_page = 10
+        per_page = 20
         total_pages = max(1, (len(rows) + per_page - 1) // per_page)
         if not rows:
             await ctx.respond("Leaderboard is empty.")
@@ -74,7 +57,7 @@ class PointsModule(commands.Cog):
             await ctx.respond("You do not have permission.", ephemeral=True)
             return
         await db.reset_points()
-        await ctx.respond("🏆 **Leaderboard has been reset!** All points have been cleared.")
+        await ctx.respond("Leaderboard has been reset!", ephemeral=True)
 
     @commands.slash_command(name="points_add", description="Add points to a user (Admin only)")
     async def points_add(
@@ -91,8 +74,7 @@ class PointsModule(commands.Cog):
             return
         current = await db.get_points(user.id)
         await db.set_points(user.id, current + amount)
-        new_total = current + amount
-        await ctx.respond(f"🎯 **Points Added!**\n{user.mention} received **+{amount:,} points**\n📊 **New Total:** {new_total:,} points")
+        await ctx.respond(f"Added {amount} points to {user.mention}.", ephemeral=True)
 
     @commands.slash_command(name="points_remove", description="Remove points from a user (Admin only)")
     async def points_remove(
@@ -108,9 +90,8 @@ class PointsModule(commands.Cog):
             await ctx.respond("Amount must be positive.", ephemeral=True)
             return
         current = await db.get_points(user.id)
-        new_total = max(0, current - amount)
-        await db.set_points(user.id, new_total)
-        await ctx.respond(f"⚠️ **Points Removed!**\n{user.mention} lost **-{amount:,} points**\n📊 **New Total:** {new_total:,} points")
+        await db.set_points(user.id, max(0, current - amount))
+        await ctx.respond(f"Removed {amount} points from {user.mention}.", ephemeral=True)
 
     @commands.slash_command(name="points_set", description="Set user's points to exact value (Admin only)")
     async def points_set(
@@ -126,7 +107,7 @@ class PointsModule(commands.Cog):
             await ctx.respond("Amount cannot be negative.", ephemeral=True)
             return
         await db.set_points(user.id, amount)
-        await ctx.respond(f"🎯 **Points Set!**\n{user.mention}'s points have been set to **{amount:,} points**")
+        await ctx.respond(f"Set {user.mention}'s points to {amount}.", ephemeral=True)
 
     @commands.slash_command(name="points_remove_user", description="Remove a user from leaderboard (Admin only)")
     async def points_remove_user(
@@ -138,7 +119,7 @@ class PointsModule(commands.Cog):
             await ctx.respond("You do not have permission.", ephemeral=True)
             return
         await db.delete_user_points(user.id)
-        await ctx.respond(f"🗑️ **User Removed!**\n{user.mention} has been removed from the leaderboard.")
+        await ctx.respond(f"Removed {user.mention} from the leaderboard.", ephemeral=True)
 
 def setup(bot):
     bot.add_cog(PointsModule(bot))

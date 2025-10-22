@@ -94,7 +94,7 @@ class VerificationModal(Modal):
         embed.add_field(name="In-game name", value=in_game, inline=False)
         embed.add_field(name="Invited by", value=invited_by, inline=False)
 
-        mention = f"{interaction.user.mention} {staff_role.mention if staff_role else (admin_role.mention if admin_role else '')}"
+        mention = staff_role.mention if staff_role else (admin_role.mention if admin_role else "")
         msg = await ch.send(content=mention, embed=embed, view=VerificationTicketView())
         try:
             await msg.pin()
@@ -139,29 +139,12 @@ class VerificationModule(commands.Cog):
             category_id = (cfg or {}).get("id")
 
         embed = discord.Embed(
-            title="🛡️ VERIFICATION PANEL 🛡️",
+            title="🛡️ Verification Panel",
             description=VERIFICATION_TEXT,
             color=discord.Color.green(),
         )
         view = VerificationPanelView(category_id)
-        message = await ctx.respond(embed=embed, view=view)
-        
-        # Save to database for persistence
-        if hasattr(message, 'message'):
-            message = message.message
-        
-        panel_data = {
-            "category_id": category_id,
-            "panel_type": "verification"
-        }
-        await db.save_persistent_panel(
-            channel_id=ctx.channel.id,
-            message_id=message.id,
-            panel_type="verification",
-            data=panel_data
-        )
-        
-        await ctx.followup.send("✅ **Persistent verification panel created!** It will auto-refresh every 10 minutes.", ephemeral=True)
+        await ctx.respond(embed=embed, view=view)
 
 def setup(bot):
     bot.add_cog(VerificationModule(bot))
