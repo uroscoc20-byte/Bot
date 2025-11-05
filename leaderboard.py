@@ -3,14 +3,14 @@ from database import db
 
 ACCENT = 0x5865F2
 
-async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord.Embed:
+async def create_leaderboard_embed(page: int = 1, per_page: int = 20) -> discord.Embed:
     rows = await db.get_leaderboard()
     sorted_points = sorted(rows, key=lambda x: x[1], reverse=True)
     total_pages = max(1, (len(sorted_points) + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
     start = (page - 1) * per_page
     end = start + per_page
-    
+
     lines = []
     top_emojis = ["🥇", "🥈", "🥉"]
     for idx, (user_id, pts) in enumerate(sorted_points[start:end], start=start + 1):
@@ -18,7 +18,7 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord
         if idx <= 3:
             prefix += f"{top_emojis[idx - 1]} "
         lines.append(f"{prefix}<@{user_id}> — **{pts}**")
-    
+
     description = "\n".join(lines) if lines else "No entries yet."
     embed = discord.Embed(
         title="🏆 Helper's Leaderboard Season 7",
@@ -27,6 +27,7 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord
     )
     embed.set_footer(text=f"Page {page}/{total_pages}")
     return embed
+
 
 class LeaderboardView(discord.ui.View):
     def __init__(self, current_page: int, total_pages: int, per_page: int):

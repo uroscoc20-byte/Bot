@@ -413,13 +413,11 @@ class TicketModule(commands.Cog):
             } for name in DEFAULT_POINT_VALUES.keys()]
         panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
-        
         embed = discord.Embed(
             title="🎮 In-game Assistance",
             description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
             color=panel_cfg.get("color", 0x5865F2),
         )
-
         services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
         embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
         embed.add_field(
@@ -427,7 +425,6 @@ class TicketModule(commands.Cog):
             value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
             inline=False,
         )
-
         await ctx.respond(embed=embed, view=view)
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")

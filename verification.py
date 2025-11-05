@@ -95,9 +95,7 @@ class VerificationModal(Modal):
         embed.add_field(name="Invited by", value=invited_by, inline=False)
 
         mention = staff_role.mention if staff_role else (admin_role.mention if admin_role else "")
-        # Ping the requesting user along with staff
-        ping_content = f"{mention} {interaction.user.mention}"
-        msg = await ch.send(content=ping_content, embed=embed, view=VerificationTicketView())
+        msg = await ch.send(content=mention, embed=embed, view=VerificationTicketView())
         try:
             await msg.pin()
         except Exception:
