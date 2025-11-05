@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 import sqlite3
 import math
 
@@ -8,9 +7,8 @@ class Leaderboard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="leaderboard", description="Show the points leaderboard")
-    @app_commands.describe(page="Page number to view")
-    async def leaderboard(self, interaction: discord.Interaction, page: int = 1):
+    @commands.slash_command(name="leaderboard", description="Show the points leaderboard")
+    async def leaderboard(self, ctx: discord.ApplicationContext, page: discord.Option(int, "Page number to view", required=False, default=1)):
         try:
             conn = sqlite3.connect('database.db')
             cursor = conn.cursor()
@@ -25,7 +23,7 @@ class Leaderboard(commands.Cog):
                     description="No users with points yet!",
                     color=0x2F3136
                 )
-                await interaction.response.send_message(embed=embed)
+                await ctx.respond(embed=embed)
                 return
             
             # Calculate pagination
@@ -75,7 +73,7 @@ class Leaderboard(commands.Cog):
                 # Add verification checkmark if user has certain roles
                 checkmark = ""
                 if user:
-                    member = interaction.guild.get_member(user.id)
+                    member = ctx.guild.get_member(user.id)
                     if member and any(role.name.lower() in ['verified', 'helper', 'staff', 'moderator', 'admin'] for role in member.roles):
                         checkmark = " ✓"
                 
@@ -89,13 +87,13 @@ class Leaderboard(commands.Cog):
             # Add navigation buttons if multiple pages
             if total_pages > 1:
                 view = LeaderboardView(page, total_pages)
-                await interaction.response.send_message(embed=embed, view=view)
+                await ctx.respond(embed=embed, view=view)
             else:
-                await interaction.response.send_message(embed=embed)
+                await ctx.respond(embed=embed)
                 
         except Exception as e:
             print(f"Leaderboard error: {e}")
-            await interaction.response.send_message("❌ Error loading leaderboard!", ephemeral=True)
+            await ctx.respond("❌ Error loading leaderboard!", ephemeral=True)
 
 class LeaderboardView(discord.ui.View):
     def __init__(self, current_page, total_pages):
@@ -110,13 +108,13 @@ class LeaderboardView(discord.ui.View):
             self.next_button.disabled = True
 
     @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary)
-    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def previous_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if self.current_page > 1:
             new_page = self.current_page - 1
             await self.update_leaderboard(interaction, new_page)
 
     @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary)
-    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def next_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if self.current_page < self.total_pages:
             new_page = self.current_page + 1
             await self.update_leaderboard(interaction, new_page)
@@ -187,5 +185,5 @@ class LeaderboardView(discord.ui.View):
             print(f"Leaderboard update error: {e}")
             await interaction.response.send_message("❌ Error updating leaderboard!", ephemeral=True)
 
-async def setup(bot):
-    await bot.add_cog(Leaderboard(bot))
+def setup(bot):
+    bot.add_cog(Leaderboard(bot))

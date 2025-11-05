@@ -1,22 +1,20 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 import sqlite3
 
 class Points(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="add_points", description="Add points to a user")
-    @app_commands.describe(user="User to add points to", amount="Amount of points to add")
-    async def add_points(self, interaction: discord.Interaction, user: discord.Member, amount: int):
+    @commands.slash_command(name="add_points", description="Add points to a user")
+    async def add_points(self, ctx: discord.ApplicationContext, user: discord.Option(discord.Member, "User to add points to"), amount: discord.Option(int, "Amount of points to add")):
         # Check if user has permission (adjust role names as needed)
-        if not any(role.name.lower() in ['admin', 'moderator', 'staff'] for role in interaction.user.roles):
-            await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        if not any(role.name.lower() in ['admin', 'moderator', 'staff'] for role in ctx.user.roles):
+            await ctx.respond("❌ You don't have permission to use this command!", ephemeral=True)
             return
         
         if amount <= 0:
-            await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+            await ctx.respond("❌ Amount must be positive!", ephemeral=True)
             return
         
         try:
@@ -45,24 +43,23 @@ class Points(commands.Cog):
                            f"**New Total:** {new_total:,} points",
                 color=0x00ff00
             )
-            embed.set_footer(text=f"Added by {interaction.user.display_name}")
+            embed.set_footer(text=f"Added by {ctx.user.display_name}")
             
-            await interaction.response.send_message(embed=embed)  # Public response
+            await ctx.respond(embed=embed)  # Public response
             
         except Exception as e:
             print(f"Add points error: {e}")
-            await interaction.response.send_message("❌ Error adding points!", ephemeral=True)
+            await ctx.respond("❌ Error adding points!", ephemeral=True)
 
-    @app_commands.command(name="remove_points", description="Remove points from a user")
-    @app_commands.describe(user="User to remove points from", amount="Amount of points to remove")
-    async def remove_points(self, interaction: discord.Interaction, user: discord.Member, amount: int):
+    @commands.slash_command(name="remove_points", description="Remove points from a user")
+    async def remove_points(self, ctx: discord.ApplicationContext, user: discord.Option(discord.Member, "User to remove points from"), amount: discord.Option(int, "Amount of points to remove")):
         # Check if user has permission
-        if not any(role.name.lower() in ['admin', 'moderator', 'staff'] for role in interaction.user.roles):
-            await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        if not any(role.name.lower() in ['admin', 'moderator', 'staff'] for role in ctx.user.roles):
+            await ctx.respond("❌ You don't have permission to use this command!", ephemeral=True)
             return
         
         if amount <= 0:
-            await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+            await ctx.respond("❌ Amount must be positive!", ephemeral=True)
             return
         
         try:
@@ -74,7 +71,7 @@ class Points(commands.Cog):
             result = cursor.fetchone()
             
             if not result:
-                await interaction.response.send_message(f"❌ {user.mention} has no points!", ephemeral=True)
+                await ctx.respond(f"❌ {user.mention} has no points!", ephemeral=True)
                 return
             
             current_points = result[0]
@@ -91,18 +88,17 @@ class Points(commands.Cog):
                            f"**New Total:** {new_total:,} points",
                 color=0xff0000
             )
-            embed.set_footer(text=f"Removed by {interaction.user.display_name}")
+            embed.set_footer(text=f"Removed by {ctx.user.display_name}")
             
-            await interaction.response.send_message(embed=embed)  # Public response
+            await ctx.respond(embed=embed)  # Public response
             
         except Exception as e:
             print(f"Remove points error: {e}")
-            await interaction.response.send_message("❌ Error removing points!", ephemeral=True)
+            await ctx.respond("❌ Error removing points!", ephemeral=True)
 
-    @app_commands.command(name="points", description="Check your or someone's points")
-    @app_commands.describe(user="User to check points for (optional)")
-    async def check_points(self, interaction: discord.Interaction, user: discord.Member = None):
-        target_user = user or interaction.user
+    @commands.slash_command(name="points", description="Check your or someone's points")
+    async def check_points(self, ctx: discord.ApplicationContext, user: discord.Option(discord.Member, "User to check points for", required=False) = None):
+        target_user = user or ctx.user
         
         try:
             conn = sqlite3.connect('database.db')
@@ -120,11 +116,11 @@ class Points(commands.Cog):
                 color=0x00aaff
             )
             
-            await interaction.response.send_message(embed=embed)
+            await ctx.respond(embed=embed)
             
         except Exception as e:
             print(f"Check points error: {e}")
-            await interaction.response.send_message("❌ Error checking points!", ephemeral=True)
+            await ctx.respond("❌ Error checking points!", ephemeral=True)
 
-async def setup(bot):
-    await bot.add_cog(Points(bot))
+def setup(bot):
+    bot.add_cog(Points(bot))
