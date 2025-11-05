@@ -41,16 +41,15 @@ async def on_ready():
 
 # ---------- EXTENSIONS ----------
 initial_extensions = [
-    "setup",          # setup commands for roles, channels, etc.
-    "tickets",        # ticket system
-    "points",         # points system (add/remove/check points)
-    "leaderboard",    # leaderboard commands
-    "custom_commands", # custom command management
+    "setup",
+    "tickets",
+    "points",
+    "custom_commands",
     "custom_simple",  # manage !custom text commands and edit via modal
-    "auditlog",       # log slash and prefix commands (fixed name)
+    "audit_log",      # log slash and prefix commands
     "verification",   # verification panel/tickets
     "persistent_panels",  # persistent panels with auto-refresh
-    "bot_speak"       # talk command
+    "bot_speak"  # optional
 ]
 
 # ---------- ASYNC MAIN ----------

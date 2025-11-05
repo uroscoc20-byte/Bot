@@ -9,15 +9,15 @@ from io import StringIO
 
 # ---------- DEFAULTS ----------
 DEFAULT_POINT_VALUES = {
-    "UltraSpeaker Express": 8,
+    "Ultra Speaker Express": 8,
     "Ultra Gramiel Express": 7,
-    "Daily 4-Man Express": 4,
-    "Daily 7-Man Express": 10,
-    "Weekly Ultra Express": 12,
-    "GrimChallenge Express": 10,
+    "4-Man Ultra Daily Express": 4,
+    "7-Man Ultra Daily Express": 10,
+    "Ultra Weekly Express": 12,
+    "Grim Express": 10,
     "Daily Temple Express": 6,
 }
-DEFAULT_HELPER_SLOTS = {"Daily 7-Man Express": 6, "GrimChallenge Express": 6}
+DEFAULT_HELPER_SLOTS = {"7-Man Ultra Daily Express": 6, "Grim Express": 6}
 DEFAULT_SLOTS = 3
 DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room?*", "Anything else?"]
 
@@ -124,19 +124,6 @@ class TicketModal(Modal):
             pass
 
         try:
-            # Validate input fields
-            for ti in self.inputs:
-                label_clean = (ti.label or "").strip()
-                label_lower = label_clean.lower()
-                value_text = (ti.value or "").strip()
-                
-                if value_text and value_text != "—":
-                    if label_lower.startswith("server name") or label_lower.startswith("anything else"):
-                        # Server name and Anything else fields - no numbers allowed
-                        if any(char.isdigit() for char in value_text):
-                            await interaction.followup.send(f"❌ {label_clean} field cannot contain numbers.", ephemeral=True)
-                            return
-                    # Room and In-game name fields allow both letters and numbers (no validation needed)
             if not bot_can_manage_channels(interaction):
                 await interaction.followup.send(
                     "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
@@ -310,7 +297,7 @@ class TicketModal(Modal):
 # ---------- TICKET VIEW ----------
 class TicketView(View):
     def __init__(self, category, requestor_id):
-        super().__init__(timeout=None)  # Make buttons persistent
+        super().__init__(timeout=None)
         self.category = category
         self.requestor_id = requestor_id
         self.add_item(Button(label="Join", style=discord.ButtonStyle.green, custom_id="join_ticket", emoji="➕"))
@@ -318,7 +305,7 @@ class TicketView(View):
 
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
-        super().__init__(timeout=None)
+        super().__init__(timeout=60)
         self.ticket_channel_id = ticket_channel_id
 
     @discord.ui.button(label="Reward helpers", style=discord.ButtonStyle.green, custom_id="reward_yes")
@@ -390,14 +377,6 @@ class TicketModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """Add persistent views when bot starts"""
-        # Add persistent views so they work after bot restarts
-        self.bot.add_view(TicketPanelView([]))  # Empty categories for now, will be populated when used
-        self.bot.add_view(TicketView("", 0))  # Empty category and requestor for persistent view
-        self.bot.add_view(RewardChoiceView(0))  # Empty channel ID for persistent view
-
     @commands.slash_command(name="panel", description="Deploy ticket panel (staff/admin only)")
     async def panel(self, ctx: discord.ApplicationContext):
         roles_cfg = await db.get_roles()
@@ -436,35 +415,17 @@ class TicketModule(commands.Cog):
         view = TicketPanelView(categories)
         
         embed = discord.Embed(
-            title="🚂 CHOOSE YOUR TICKET TYPE �",
-            description="**Pick the ticket type that fits your request📜**\n-# https://discord.com/channels/1345073229026562079/1358536986679443496\n-------------------------------------------------------",
+            title="🎮 In-game Assistance",
+            description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
             color=panel_cfg.get("color", 0x5865F2),
         )
 
-        service_descriptions = {
-            "UltraSpeaker Express": "-# - The First Speaker",
-            "Ultra Gramiel Express": "-# - Ultra Gramiel", 
-            "Daily 4-Man Express": "-# - Daily 4-Man Ultra Bosses",
-            "Daily 7-Man Express": "-# - Daily 7-Man Ultra Bosses",
-            "Weekly Ultra Express": "-# - Weekly Ultra Bosses (excluding speaker, grim and gramiel)",
-            "GrimChallenge Express": "-# - Mechabinky & Raxborg 2.0",
-            "Daily Temple Express": "-# - Daily TempleShrine",
-        }
-
-        for cat in categories:
-            name = cat["name"]
-            desc = service_descriptions.get(name, "")
-            embed.add_field(name=f"**{name}**", value=desc, inline=False)
-
+        services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
+        embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
         embed.add_field(
-            name="-------------------------------------------------------\n## How it works📢",
-            value=(
-                "1. ✅ Select a \"ticket type\"\n"
-                "2. 📝 Fill out the form\n"
-                "3. 💁 Helpers join\n"
-                "4. 🎉 Get help in your private ticket and you can see how questions and answers work on making tickets I want to make anything else work same way as room? question"
-            ),
-            inline=False
+            name="ℹ️ How it works",
+            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
+            inline=False,
         )
 
         await ctx.respond(embed=embed, view=view)
