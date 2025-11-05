@@ -310,7 +310,7 @@ class TicketModal(Modal):
 # ---------- TICKET VIEW ----------
 class TicketView(View):
     def __init__(self, category, requestor_id):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # Make buttons persistent
         self.category = category
         self.requestor_id = requestor_id
         self.add_item(Button(label="Join", style=discord.ButtonStyle.green, custom_id="join_ticket", emoji="➕"))

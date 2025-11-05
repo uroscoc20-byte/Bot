@@ -95,11 +95,16 @@ class VerificationModal(Modal):
         embed.add_field(name="Invited by", value=invited_by, inline=False)
 
         mention = staff_role.mention if staff_role else (admin_role.mention if admin_role else "")
-        msg = await ch.send(content=mention, embed=embed, view=VerificationTicketView())
+        # Ping the requesting user along with staff
+        ping_content = f"{mention} {interaction.user.mention}"
+        msg = await ch.send(content=ping_content, embed=embed, view=VerificationTicketView())
         try:
             await msg.pin()
         except Exception:
             pass
+
+        # Send a notification to the user about their ticket
+        await ch.send(f"📋 {interaction.user.mention} Your verification ticket has been created! Staff will review it shortly.")
 
         await interaction.followup.send(f"✅ Verification ticket created: {ch.mention}", ephemeral=True)
 
