@@ -45,11 +45,12 @@ initial_extensions = [
     "tickets",
     "points",
     "custom_commands",
-    "custom_simple",  # manage !custom text commands and edit via modal
-    "audit_log",      # log slash and prefix commands
-    "verification",   # verification panel/tickets
+    "custom_simple",      # manage !custom text commands and edit via modal
+    "audit_log",          # log slash and prefix commands
+    "verification",       # verification panel/tickets
     "persistent_panels",  # persistent panels with auto-refresh
-    "bot_speak"  # optional
+    "bot_speak",          # optional
+    "leaderboard"         # new leaderboard module with rename support
 ]
 
 # ---------- ASYNC MAIN ----------
