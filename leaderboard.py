@@ -1,3 +1,4 @@
+# points_leaderboard.py
 import discord
 from discord.ext import commands
 from database import db
@@ -17,20 +18,19 @@ async def create_leaderboard_embed(bot, page: int = 1, per_page: int = 10) -> di
 
     lines = []
     top_emojis = ["🥇", "🥈", "🥉"]
-
-    # Build a dict of all guild members to avoid multiple get_user calls
-    guild_members = {}
-    for guild in bot.guilds:
-        for member in guild.members:
-            guild_members[member.id] = member
-
     for idx, (user_id, pts) in enumerate(sorted_points[start:end], start=start + 1):
-        member = guild_members.get(user_id)
+        # Try to get user object
+        member = None
+        for guild in bot.guilds:
+            member = guild.get_member(user_id)
+            if member:
+                break
         name = member.display_name if member else f"<@{user_id}>"
+
         prefix = f"#{idx} "
         if idx <= 3:
             prefix += f"{top_emojis[idx - 1]} "
-        lines.append(f"{prefix}{name} — **{pts}**")
+        lines.append(f"{prefix}{name} — **{pts} pts**")
 
     description = "\n".join(lines) if lines else "No entries yet."
 
@@ -43,7 +43,7 @@ async def create_leaderboard_embed(bot, page: int = 1, per_page: int = 10) -> di
         description=description,
         color=ACCENT,
     )
-    embed.set_footer(text=f"Page {page}/{total_pages}")
+    embed.set_footer(text=f"Page {page}/{total_pages} • Use the arrows to navigate")
     return embed
 
 
@@ -104,14 +104,19 @@ class PointsModule(commands.Cog):
         ctx: discord.ApplicationContext,
         user: discord.Option(discord.User, "Select a user", required=False),
     ):
+        await ctx.defer()  # give bot more time
         target = user or ctx.user
         pts = await db.get_points(target.id)
         avatar = target.display_avatar.url if target.display_avatar else None
-        embed = discord.Embed(title=f"🏅 Points for {target.display_name}", description=f"**{pts} points**", color=ACCENT)
+        embed = discord.Embed(
+            title=f"🏅 Points for {target.display_name}",
+            description=f"**{pts} points**",
+            color=ACCENT
+        )
         if avatar:
             embed.set_thumbnail(url=avatar)
         embed.set_footer(text="Use /leaderboard to view rankings")
-        await ctx.respond(embed=embed)
+        await ctx.followup.send(embed=embed)
 
     # -------------
     # /leaderboard
@@ -122,15 +127,16 @@ class PointsModule(commands.Cog):
         ctx: discord.ApplicationContext,
         page: discord.Option(int, "Page number", required=False, default=1),
     ):
+        await ctx.defer()  # give bot more time to fetch users
         rows = await db.get_leaderboard()
         per_page = 10
         total_pages = max(1, (len(rows) + per_page - 1) // per_page)
         if not rows:
-            await ctx.respond("Leaderboard is empty.")
+            await ctx.followup.send("Leaderboard is empty.")
             return
-        embed = await create_leaderboard_embed(self.bot, page=page, per_page=per_page)
+        embed = await create_leaderboard_embed(self.bot, page, per_page)
         view = LeaderboardView(self.bot, page, total_pages, per_page)
-        await ctx.respond(embed=embed, view=view)
+        await ctx.followup.send(embed=embed, view=view)
 
     # -------------
     # /leaderboard_rename
@@ -151,12 +157,7 @@ class PointsModule(commands.Cog):
     # Admin point commands
     # -------------
     @commands.slash_command(name="points_add", description="Add points to a user (Admin only)")
-    async def points_add(
-        self,
-        ctx: discord.ApplicationContext,
-        user: discord.Option(discord.User, "User"),
-        amount: discord.Option(int, "Amount"),
-    ):
+    async def points_add(self, ctx, user: discord.User, amount: int):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You do not have permission.")
             return
@@ -168,12 +169,7 @@ class PointsModule(commands.Cog):
         await ctx.respond(f"Added {amount} points to {user.mention}.")
 
     @commands.slash_command(name="points_remove", description="Remove points from a user (Admin only)")
-    async def points_remove(
-        self,
-        ctx: discord.ApplicationContext,
-        user: discord.Option(discord.User, "User"),
-        amount: discord.Option(int, "Amount"),
-    ):
+    async def points_remove(self, ctx, user: discord.User, amount: int):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You do not have permission.")
             return
@@ -185,12 +181,7 @@ class PointsModule(commands.Cog):
         await ctx.respond(f"Removed {amount} points from {user.mention}.")
 
     @commands.slash_command(name="points_set", description="Set user's points to exact value (Admin only)")
-    async def points_set(
-        self,
-        ctx: discord.ApplicationContext,
-        user: discord.Option(discord.User, "User"),
-        amount: discord.Option(int, "Amount"),
-    ):
+    async def points_set(self, ctx, user: discord.User, amount: int):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You do not have permission.")
             return
@@ -201,11 +192,7 @@ class PointsModule(commands.Cog):
         await ctx.respond(f"Set {user.mention}'s points to {amount}.")
 
     @commands.slash_command(name="points_remove_user", description="Remove a user from leaderboard (Admin only)")
-    async def points_remove_user(
-        self,
-        ctx: discord.ApplicationContext,
-        user: discord.Option(discord.User, "User"),
-    ):
+    async def points_remove_user(self, ctx, user: discord.User):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You do not have permission.")
             return
@@ -213,7 +200,7 @@ class PointsModule(commands.Cog):
         await ctx.respond(f"Removed {user.mention} from the leaderboard.")
 
     @commands.slash_command(name="points_reset", description="Reset all points (Admin only)")
-    async def points_reset(self, ctx: discord.ApplicationContext):
+    async def points_reset(self, ctx):
         if not ctx.user.guild_permissions.administrator:
             await ctx.respond("You do not have permission.")
             return
