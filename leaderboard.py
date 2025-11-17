@@ -26,15 +26,13 @@ async def create_leaderboard_image(bot, guild: discord.Guild, page: int = 1, per
     start = (page - 1) * per_page
     end = start + per_page
 
-    # Image height based on number of rows
     image_height = IMAGE_ROW_HEIGHT * (len(sorted_points[start:end]) + 2)
     img = Image.new("RGB", (IMAGE_WIDTH, image_height), BACKGROUND_COLOR)
     draw = ImageDraw.Draw(img)
-    
-    # Fonts
-    title_font = ImageFont.truetype("arial.ttf", TITLE_FONT_SIZE)
-    row_font = ImageFont.truetype("arial.ttf", ROW_FONT_SIZE)
-    
+
+    title_font = ImageFont.load_default()
+    row_font = ImageFont.load_default()
+
     # Title
     cfg = await db.load_config("leaderboard_title")
     title = cfg.get("title") if cfg else "🏆 Helper's Leaderboard"
@@ -47,14 +45,12 @@ async def create_leaderboard_image(bot, guild: discord.Guild, page: int = 1, per
         if member:
             name = member.display_name
         else:
-            user = await bot.fetch_user(user_id)
-            name = f"{user.name}#{user.discriminator}"
+            name = f"Unknown#{user_id}"
 
         prefix = f"{idx} "
         if idx <= 3:
             prefix += f"{TOP_EMOJIS[idx - 1]} "
-
-        text = f"{prefix}{name} — {pts}"
+        text = f"{prefix}{name} — {pts} pts"
         draw.text((20, y_offset), text, fill=TEXT_COLOR, font=row_font)
         y_offset += IMAGE_ROW_HEIGHT
 
@@ -115,6 +111,26 @@ class PointsModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    # /points command
+    @commands.slash_command(name="points", description="Check your points or another user's points")
+    async def points(
+        self,
+        ctx: discord.ApplicationContext,
+        user: discord.Option(discord.User, "Select a user", required=False),
+    ):
+        target = user or ctx.user
+        pts = await db.get_points(target.id)
+        avatar = target.display_avatar.url if target.display_avatar else None
+        embed = discord.Embed(
+            title=f"🏅 Points for {target.display_name}",
+            description=f"**{pts} points**",
+            color=ACCENT
+        )
+        if avatar:
+            embed.set_thumbnail(url=avatar)
+        embed.set_footer(text="Use /leaderboard to view rankings")
+        await ctx.respond(embed=embed)
+
     # /leaderboard command
     @commands.slash_command(name="leaderboard", description="Show points leaderboard")
     async def leaderboard(
@@ -122,7 +138,7 @@ class PointsModule(commands.Cog):
         ctx: discord.ApplicationContext,
         page: discord.Option(int, "Page number", required=False, default=1)
     ):
-        await ctx.defer()  # prevents timeout
+        await ctx.defer()
         guild = ctx.guild
         if not guild:
             await ctx.followup.send("This command can only be used in a server.")
@@ -149,8 +165,6 @@ class PointsModule(commands.Cog):
             return
         await db.save_config("leaderboard_title", {"title": title})
         await ctx.respond(f"✅ Leaderboard renamed to: **{title}**")
-
-    # Keep all your existing /points and admin commands as they were...
 
 # ------------------------
 # Setup
