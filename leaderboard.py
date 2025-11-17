@@ -1,166 +1,188 @@
+# leaderboard.py
 import discord
 from discord.ext import commands
-from discord import app_commands
-from discord.ui import View, Button
 from database import db
 
 ACCENT = 0x5865F2
 TOP_EMOJIS = ["🥇", "🥈", "🥉"]
 PER_PAGE = 10
-DEFAULT_TITLE = "🏆 Helper's Leaderboard"
+GUILD_ID = 1345073229026562079  # Your server ID
 
-# -------------------------------
-# Leaderboard Pagination View
-# -------------------------------
-class LeaderboardView(View):
-    def __init__(self, entries, page=0):
+# ------------------------
+# Leaderboard Embed
+# ------------------------
+async def create_leaderboard_embed(bot, guild: discord.Guild, page: int = 1, per_page: int = PER_PAGE):
+    rows = await db.get_leaderboard()
+    sorted_points = sorted(rows, key=lambda x: x[1], reverse=True)
+    total_pages = max(1, (len(sorted_points) + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    end = start + per_page
+
+    lines = []
+    for idx, (user_id, pts) in enumerate(sorted_points[start:end], start=start + 1):
+        member = guild.get_member(user_id)
+        name = member.display_name if member else f"<@{user_id}>"
+        prefix = f"#{idx} "
+        if idx <= 3:
+            prefix += f"{TOP_EMOJIS[idx - 1]} "
+        lines.append(f"{prefix}{name} — **{pts} pts**")
+
+    description = "\n".join(lines) if lines else "No entries yet."
+    cfg = await db.load_config("leaderboard_title")
+    title = cfg.get("title") if cfg else "🏆 Helper's Leaderboard"
+
+    embed = discord.Embed(title=title, description=description, color=ACCENT)
+    embed.set_footer(text=f"Page {page}/{total_pages}")
+    return embed
+
+# ------------------------
+# Leaderboard View
+# ------------------------
+class LeaderboardView(discord.ui.View):
+    def __init__(self, bot, guild, current_page: int, total_pages: int, per_page: int):
         super().__init__(timeout=None)
-        self.entries = entries
-        self.page = page
-        self.max_page = max(0, (len(entries) - 1) // PER_PAGE)
+        self.bot = bot
+        self.guild = guild
+        self.current_page = current_page
+        self.total_pages = total_pages
+        self.per_page = per_page
+        self._sync_buttons()
 
-        self.previous.disabled = (self.page == 0)
-        self.next.disabled = (self.page == self.max_page)
+    def _sync_buttons(self):
+        for b in self.children:
+            if isinstance(b, discord.ui.Button):
+                b.disabled = (
+                    b.custom_id == "lb_prev" and self.current_page <= 1
+                ) or (
+                    b.custom_id == "lb_next" and self.current_page >= self.total_pages
+                )
 
-    @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary, custom_id="leader_prev")
-    async def previous(self, interaction: discord.Interaction, button: Button):
-        if self.page > 0:
-            self.page -= 1
-        await interaction.response.edit_message(embed=self.get_page_embed(interaction.guild), view=self)
+    @discord.ui.button(style=discord.ButtonStyle.gray, emoji="◀️", custom_id="lb_prev")
+    async def prev_page(self, button, interaction: discord.Interaction):
+        if self.current_page <= 1:
+            await interaction.response.defer()
+            return
+        self.current_page -= 1
+        embed = await create_leaderboard_embed(self.bot, self.guild, self.current_page, self.per_page)
+        self._sync_buttons()
+        await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary, custom_id="leader_next")
-    async def next(self, interaction: discord.Interaction, button: Button):
-        if self.page < self.max_page:
-            self.page += 1
-        await interaction.response.edit_message(embed=self.get_page_embed(interaction.guild), view=self)
+    @discord.ui.button(style=discord.ButtonStyle.gray, emoji="▶️", custom_id="lb_next")
+    async def next_page(self, button, interaction: discord.Interaction):
+        if self.current_page >= self.total_pages:
+            await interaction.response.defer()
+            return
+        self.current_page += 1
+        embed = await create_leaderboard_embed(self.bot, self.guild, self.current_page, self.per_page)
+        self._sync_buttons()
+        await interaction.response.edit_message(embed=embed, view=self)
 
-    def get_page_embed(self, guild):
-        start = self.page * PER_PAGE
-        end = start + PER_PAGE
-        page_entries = self.entries[start:end]
-
-        # Load leaderboard title from DB
-        cfg = db.get_config(guild.id, "leaderboard_title")
-        title = cfg if cfg else DEFAULT_TITLE
-
-        embed = discord.Embed(title=title, color=ACCENT)
-        if not page_entries:
-            embed.description = "No points recorded yet."
-            return embed
-
-        desc = ""
-        rank = start + 1
-        for user_id, points in page_entries:
-            member = guild.get_member(int(user_id))
-            name = member.display_name if member else f"<@{user_id}>"
-
-            prefix = f"#{rank} "
-            if rank <= 3:
-                prefix += f"{TOP_EMOJIS[rank-1]} "
-
-            desc += f"{prefix}{name} — **{points} pts**\n"
-            rank += 1
-
-        embed.description = desc
-        embed.set_footer(text=f"Page {self.page+1}/{self.max_page+1}")
-        return embed
-
-
-# -------------------------------
+# ------------------------
 # Points & Leaderboard Cog
-# -------------------------------
+# ------------------------
 class PointsModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # -------------------------------
-    # /points command
-    # -------------------------------
-    @app_commands.command(name="points", description="Check your points or another user's points")
-    async def points(self, interaction: discord.Interaction, user: discord.User = None):
-        target = user or interaction.user
+    # ------------------------
+    # /points
+    # ------------------------
+    @commands.slash_command(guild_ids=[GUILD_ID], name="points", description="Check your points or another user's points")
+    async def points(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User, "Select a user", required=False)):
+        target = user or ctx.user
         pts = await db.get_points(target.id)
         avatar = target.display_avatar.url if target.display_avatar else None
         embed = discord.Embed(
             title=f"🏅 Points for {target.display_name}",
-            description=f"**{pts} pts**",
+            description=f"**{pts} points**",
             color=ACCENT
         )
         if avatar:
             embed.set_thumbnail(url=avatar)
         embed.set_footer(text="Use /leaderboard to view rankings")
-        await interaction.response.send_message(embed=embed)
+        await ctx.respond(embed=embed)
 
-    # -------------------------------
-    # /leaderboard command
-    # -------------------------------
-    @app_commands.command(name="leaderboard", description="Show server leaderboard")
-    async def leaderboard(self, interaction: discord.Interaction):
-        data = await db.get_leaderboard()
-        if not data:
-            await interaction.response.send_message("Leaderboard is empty.")
+    # ------------------------
+    # /leaderboard
+    # ------------------------
+    @commands.slash_command(guild_ids=[GUILD_ID], name="leaderboard", description="Show points leaderboard")
+    async def leaderboard(self, ctx: discord.ApplicationContext, page: discord.Option(int, "Page number", required=False, default=1)):
+        await ctx.defer()
+        guild = ctx.guild
+        if not guild:
+            await ctx.followup.send("This command can only be used in a server.")
             return
-        sorted_data = sorted(data, key=lambda x: int(x[1]), reverse=True)
-        view = LeaderboardView(sorted_data)
-        embed = view.get_page_embed(interaction.guild)
-        await interaction.response.send_message(embed=embed, view=view)
 
-    # -------------------------------
-    # /leaderboard_rename (Admin only)
-    # -------------------------------
-    @app_commands.command(name="leaderboard_rename", description="Rename the leaderboard title")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def leaderboard_rename(self, interaction: discord.Interaction, new_title: str):
-        await db.save_config("leaderboard_title", {"title": new_title})
-        await interaction.response.send_message(f"✅ Leaderboard renamed to: **{new_title}**")
+        rows = await db.get_leaderboard()
+        if not rows:
+            await ctx.followup.send("Leaderboard is empty.")
+            return
 
-    # -------------------------------
-    # Admin points commands
-    # -------------------------------
-    @app_commands.command(name="points_add", description="Add points to a user (Admin only)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def points_add(self, interaction: discord.Interaction, user: discord.User, amount: int):
+        embed = await create_leaderboard_embed(self.bot, guild, page)
+        total_pages = max(1, (len(rows) + PER_PAGE - 1) // PER_PAGE)
+        view = LeaderboardView(self.bot, guild, page, total_pages, PER_PAGE)
+        await ctx.followup.send(embed=embed, view=view)
+
+    # ------------------------
+    # /leaderboard_rename
+    # ------------------------
+    @commands.slash_command(guild_ids=[GUILD_ID], name="leaderboard_rename", description="Rename the leaderboard title (Admin only)")
+    async def leaderboard_rename(self, ctx: discord.ApplicationContext, title: discord.Option(str, "New leaderboard title")):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission.")
+            return
+        await db.save_config("leaderboard_title", {"title": title})
+        await ctx.respond(f"✅ Leaderboard renamed to: **{title}**")
+
+    # ------------------------
+    # Admin /points commands
+    # ------------------------
+    @commands.slash_command(guild_ids=[GUILD_ID], name="points_add", description="Add points to a user (Admin only)")
+    async def points_add(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User), amount: discord.Option(int)):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("No permission."); return
         if amount <= 0:
-            await interaction.response.send_message("Amount must be positive.")
-            return
+            await ctx.respond("Amount must be positive."); return
         current = await db.get_points(user.id)
         await db.set_points(user.id, current + amount)
-        await interaction.response.send_message(f"Added {amount} pts to {user.mention}.")
+        await ctx.respond(f"Added {amount} points to {user.mention}.")
 
-    @app_commands.command(name="points_remove", description="Remove points from a user (Admin only)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def points_remove(self, interaction: discord.Interaction, user: discord.User, amount: int):
+    @commands.slash_command(guild_ids=[GUILD_ID], name="points_remove", description="Remove points from a user (Admin only)")
+    async def points_remove(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User), amount: discord.Option(int)):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("No permission."); return
         if amount <= 0:
-            await interaction.response.send_message("Amount must be positive.")
-            return
+            await ctx.respond("Amount must be positive."); return
         current = await db.get_points(user.id)
         await db.set_points(user.id, max(0, current - amount))
-        await interaction.response.send_message(f"Removed {amount} pts from {user.mention}.")
+        await ctx.respond(f"Removed {amount} points from {user.mention}.")
 
-    @app_commands.command(name="points_set", description="Set user's points (Admin only)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def points_set(self, interaction: discord.Interaction, user: discord.User, amount: int):
+    @commands.slash_command(guild_ids=[GUILD_ID], name="points_set", description="Set points of a user (Admin only)")
+    async def points_set(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User), amount: discord.Option(int)):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("No permission."); return
         if amount < 0:
-            await interaction.response.send_message("Amount cannot be negative.")
-            return
+            await ctx.respond("Cannot be negative."); return
         await db.set_points(user.id, amount)
-        await interaction.response.send_message(f"Set {user.mention}'s points to {amount}.")
+        await ctx.respond(f"Set {user.mention}'s points to {amount}.")
 
-    @app_commands.command(name="points_remove_user", description="Remove a user from leaderboard (Admin only)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def points_remove_user(self, interaction: discord.Interaction, user: discord.User):
+    @commands.slash_command(guild_ids=[GUILD_ID], name="points_remove_user", description="Remove user from leaderboard (Admin only)")
+    async def points_remove_user(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User)):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("No permission."); return
         await db.delete_user_points(user.id)
-        await interaction.response.send_message(f"Removed {user.mention} from the leaderboard.")
+        await ctx.respond(f"Removed {user.mention} from leaderboard.")
 
-    @app_commands.command(name="points_reset", description="Reset all points (Admin only)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def points_reset(self, interaction: discord.Interaction):
+    @commands.slash_command(guild_ids=[GUILD_ID], name="points_reset", description="Reset all points (Admin only)")
+    async def points_reset(self, ctx: discord.ApplicationContext):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("No permission."); return
         await db.reset_points()
-        await interaction.response.send_message("Leaderboard has been reset!")
+        await ctx.respond("Leaderboard has been reset!")
 
-
-# -------------------------------
-# Setup Cog
-# -------------------------------
-async def setup(bot):
-    await bot.add_cog(PointsModule(bot))
+# ------------------------
+# Setup
+# ------------------------
+def setup(bot):
+    bot.add_cog(PointsModule(bot))
