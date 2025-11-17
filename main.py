@@ -1,68 +1,74 @@
+# main.py
 import discord
 from discord.ext import commands
-import asyncio
 import os
+import webserver
+import asyncio
+from database import db
 
-# ---------------------------
-# BOT SETUP
-# ---------------------------
+# ---------- LOAD ENV ----------
+TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+if not TOKEN:
+    print("ERROR: DISCORD_BOT_TOKEN not set!")
+    exit(1)
 
-INTENTS = discord.Intents.default()
-INTENTS.message_content = True
-INTENTS.guilds = True
-INTENTS.members = True
+# ---------- BOT INTENTS ----------
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="/", intents=intents)
 
-bot = commands.Bot(
-    command_prefix="!",
-    intents=INTENTS
-)
-
-# ---------------------------
-# LOAD COGS
-# ---------------------------
-
-async def load_extensions():
-    await bot.load_extension("leaderboard")  # leaderboard.py
-
-
-# ---------------------------
-# SYNC SLASH COMMANDS
-# ---------------------------
-
+# ---------- EVENTS ----------
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-
-    # sync slash commands globally
     try:
-        synced = await bot.tree.sync()
-        print(f"Synchronized {len(synced)} slash commands.")
+        if hasattr(bot, "tree"):
+            await bot.tree.sync()
+        if hasattr(bot, "sync_commands"):
+            await bot.sync_commands()
+        print("✅ Slash commands synced.")
+        
+        # Restore persistent panels
+        try:
+            persistent_panels_cog = bot.get_cog("PersistentPanels")
+            if persistent_panels_cog:
+                await persistent_panels_cog.restore_persistent_panels()
+                print("✅ Persistent panels restored.")
+        except Exception as e:
+            print(f"❌ Failed to restore persistent panels: {e}")
+            
     except Exception as e:
-        print("Slash sync error:", e)
+        print(f"❌ Slash command sync failed: {e}")
 
-    print("Bot is ready!")
+# ---------- EXTENSIONS ----------
+initial_extensions = [
+    "setup",
+    "tickets",
+    "points",
+    "custom_commands",
+    "custom_simple",  # manage !custom text commands and edit via modal
+    "audit_log",      # log slash and prefix commands
+    "verification",   # verification panel/tickets
+    "persistent_panels",  # persistent panels with auto-refresh
+    "bot_speak"  # optional
+]
 
-
-# ---------------------------
-# RUN BOT
-# ---------------------------
-
+# ---------- ASYNC MAIN ----------
 async def main():
-    async with bot:
-        await load_extensions()
+    await db.init()
+    print("✅ Database initialized.")
 
-        # Get token from env OR edit directly here
-        TOKEN = os.getenv("DISCORD_BOT_TOKEN") or "YOUR_BOT_TOKEN_HERE"
+    for ext in initial_extensions:
+        try:
+            bot.load_extension(ext)
+            print(f"✅ Loaded extension: {ext}")
+        except Exception as e:
+            print(f"❌ Failed to load extension {ext}: {e}")
 
-        await bot.start(TOKEN)
+    webserver.start()
+    print("✅ Webserver started for Render healthchecks.")
 
+    await bot.start(TOKEN)
 
-# ---------------------------
-# START
-# ---------------------------
-
+# ---------- RUN ----------
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Bot shutting down...")
+    asyncio.run(main())

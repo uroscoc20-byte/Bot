@@ -1,126 +1,143 @@
+# leaderboard.py
 import discord
 from discord.ext import commands
-from discord import app_commands
 from database import db
 
+ACCENT = 0x5865F2
+PER_PAGE = 10
+TOP_EMOJIS = ["🥇", "🥈", "🥉"]
 
+# ------------------------
+# Leaderboard Embed
+# ------------------------
+async def create_leaderboard_embed(page: int = 1, per_page: int = PER_PAGE) -> discord.Embed:
+    rows = await db.get_leaderboard()
+    sorted_points = sorted(rows, key=lambda x: x[1], reverse=True)
+    total_pages = max(1, (len(sorted_points) + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    end = start + per_page
+
+    lines = []
+    for idx, (user_id, pts) in enumerate(sorted_points[start:end], start=start + 1):
+        prefix = f"#{idx} "
+        if idx <= 3:
+            prefix += f"{TOP_EMOJIS[idx - 1]} "
+        # visually nice: bold names and points
+        lines.append(f"{prefix}**<@{user_id}>** — `{pts} pts`")
+
+    description = "\n".join(lines) if lines else "No entries yet."
+    
+    # Load custom title from DB if set
+    cfg = await db.load_config("leaderboard_title")
+    title = cfg.get("title") if cfg else "🏆 Helper's Leaderboard"
+
+    embed = discord.Embed(
+        title=title,
+        description=description,
+        color=ACCENT,
+    )
+    embed.set_footer(text=f"Page {page}/{total_pages} • Use arrows to navigate")
+    return embed
+
+# ------------------------
+# Leaderboard Pagination View
+# ------------------------
 class LeaderboardView(discord.ui.View):
-    def __init__(self, entries, page_size, user, title):
-        super().__init__(timeout=60)
-        self.entries = entries
-        self.page_size = page_size
-        self.user = user
-        self.page = 0
-        self.title = title
+    def __init__(self, current_page: int, total_pages: int, per_page: int = PER_PAGE):
+        super().__init__(timeout=120)
+        self.current_page = current_page
+        self.total_pages = max(1, total_pages)
+        self.per_page = per_page
+        self._sync_buttons()
 
-        self.update_buttons()
+    def _sync_buttons(self):
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                if child.custom_id == "lb_prev":
+                    child.disabled = self.current_page <= 1
+                elif child.custom_id == "lb_next":
+                    child.disabled = self.current_page >= self.total_pages
 
-    def update_buttons(self):
-        self.first_page.disabled = self.page == 0
-        self.prev_page.disabled = self.page == 0
-        max_page = max(0, (len(self.entries) - 1) // self.page_size)
-        self.next_page.disabled = self.page >= max_page
-        self.last_page.disabled = self.page >= max_page
+    @discord.ui.button(style=discord.ButtonStyle.gray, emoji="◀️", custom_id="lb_prev")
+    async def prev_page(self, button: discord.ui.Button, interaction: discord.Interaction):
+        if self.current_page <= 1:
+            await interaction.response.defer()
+            return
+        self.current_page -= 1
+        embed = await create_leaderboard_embed(self.current_page, self.per_page)
+        self._sync_buttons()
+        await interaction.response.edit_message(embed=embed, view=self)
 
-    def get_page_embed(self):
-        start = self.page * self.page_size
-        end = start + self.page_size
-        page_entries = self.entries[start:end]
+    @discord.ui.button(style=discord.ButtonStyle.gray, emoji="▶️", custom_id="lb_next")
+    async def next_page(self, button: discord.ui.Button, interaction: discord.Interaction):
+        if self.current_page >= self.total_pages:
+            await interaction.response.defer()
+            return
+        self.current_page += 1
+        embed = await create_leaderboard_embed(self.current_page, self.per_page)
+        self._sync_buttons()
+        await interaction.response.edit_message(embed=embed, view=self)
 
-        embed = discord.Embed(
-            title=self.title,
-            colour=discord.Colour.gold()
-        )
-
-        if not page_entries:
-            embed.description = "No entries found."
-            return embed
-
-        description = ""
-        for index, (user_id, points) in enumerate(page_entries, start=start + 1):
-            description += f"**#{index}** <@{user_id}> — **{points} pts**\n"
-
-        embed.description = description
-        embed.set_footer(text=f"Page {self.page + 1}")
-        return embed
-
-    async def update(self, interaction: discord.Interaction):
-        self.update_buttons()
-        await interaction.response.edit_message(
-            embed=self.get_page_embed(),
-            view=self
-        )
-
-    @discord.ui.button(label="⏪ First", style=discord.ButtonStyle.blurple)
-    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.page = 0
-        await self.update(interaction)
-
-    @discord.ui.button(label="⬅ Previous", style=discord.ButtonStyle.primary)
-    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.page > 0:
-            self.page -= 1
-        await self.update(interaction)
-
-    @discord.ui.button(label="Next ➡", style=discord.ButtonStyle.primary)
-    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        max_page = (len(self.entries) - 1) // self.page_size
-        if self.page < max_page:
-            self.page += 1
-        await self.update(interaction)
-
-    @discord.ui.button(label="⏩ Last", style=discord.ButtonStyle.blurple)
-    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.page = (len(self.entries) - 1) // self.page_size
-        await self.update(interaction)
-
-
-class LeaderboardCog(commands.Cog):
+# ------------------------
+# Points & Leaderboard Cog
+# ------------------------
+class PointsModule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        # Defaults stored in memory (you can persist these in db if you want)
-        self.lb_title = "Leaderboard"
-        self.page_size = 10
+    # ------------------------
+    # /points command
+    # ------------------------
+    @commands.slash_command(name="points", description="Check your points or another user's points")
+    async def points(self, ctx: discord.ApplicationContext, user: discord.Option(discord.User, "Select a user", required=False)):
+        target = user or ctx.user
+        pts = await db.get_points(target.id)
+        avatar = target.display_avatar.url if target.display_avatar else None
+        embed = discord.Embed(
+            title=f"🏅 Points for {target.display_name}",
+            description=f"**{pts} pts**",
+            color=ACCENT
+        )
+        if avatar:
+            embed.set_thumbnail(url=avatar)
+        embed.set_footer(text="Use /leaderboard to view rankings")
+        await ctx.respond(embed=embed)
 
-    # ---------------------------
+    # ------------------------
     # /leaderboard command
-    # ---------------------------
-    @app_commands.command(name="leaderboard", description="Show the leaderboard")
-    async def leaderboard(self, interaction: discord.Interaction):
-        entries = db.get_leaderboard()  # MUST return list of (user_id, points)
-
-        if not entries:
-            await interaction.response.send_message("Leaderboard is empty.", ephemeral=True)
+    # ------------------------
+    @commands.slash_command(name="leaderboard", description="Show points leaderboard")
+    async def leaderboard(self, ctx: discord.ApplicationContext, page: discord.Option(int, "Page number", required=False, default=1)):
+        await ctx.defer()
+        rows = await db.get_leaderboard()
+        if not rows:
+            await ctx.followup.send("Leaderboard is empty.")
             return
 
-        view = LeaderboardView(entries, self.page_size, interaction.user, self.lb_title)
-        embed = view.get_page_embed()
+        total_pages = max(1, (len(rows) + PER_PAGE - 1) // PER_PAGE)
+        embed = await create_leaderboard_embed(page)
+        view = LeaderboardView(page, total_pages)
+        await ctx.followup.send(embed=embed, view=view)
 
-        await interaction.response.send_message(embed=embed, view=view)
-
-    # ---------------------------
-    # /leaderboard_rename
-    # ---------------------------
-    @app_commands.command(name="leaderboard_rename", description="Rename the leaderboard title")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def leaderboard_rename(self, interaction: discord.Interaction, new_title: str):
-        self.lb_title = new_title
-        await interaction.response.send_message(f"Leaderboard title set to **{new_title}**.")
-
-    # ---------------------------
-    # /leaderboard_set_page_size
-    # ---------------------------
-    @app_commands.command(name="leaderboard_set_page_size", description="Set how many people show per leaderboard page")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def leaderboard_set_page_size(self, interaction: discord.Interaction, amount: int):
-        if amount < 3 or amount > 25:
-            await interaction.response.send_message("Page size must be between 3 and 25.", ephemeral=True)
+    # ------------------------
+    # /leaderboard_rename command
+    # ------------------------
+    @commands.slash_command(name="leaderboard_rename", description="Rename the leaderboard title (Admin only)")
+    async def leaderboard_rename(self, ctx: discord.ApplicationContext, title: discord.Option(str, "New leaderboard title")):
+        if not ctx.user.guild_permissions.administrator:
+            await ctx.respond("You do not have permission.")
             return
+        await db.save_config("leaderboard_title", {"title": title})
+        await ctx.respond(f"✅ Leaderboard renamed to: **{title}**")
 
-        self.page_size = amount
-        await interaction.response.send_message(f"Leaderboard now shows **{amount} entries per page**.")
+    # ------------------------
+    # Admin point commands (add, remove, set, remove_user, reset)
+    # ------------------------
+    # Keep your existing admin commands here
 
-
-async def setup(bot):
-    await bot.add_cog(LeaderboardCog(bot))
+# ------------------------
+# Setup
+# ------------------------
+def setup(bot):
+    bot.add_cog(PointsModule(bot))

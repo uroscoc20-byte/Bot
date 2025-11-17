@@ -9,7 +9,7 @@ VERIFICATION_TEXT = (
     "Welcome to the server!\n"
     "To gain access, please complete the short verification process below.\n\n"
     "Click Verify and provide the following information:\n\n"
-    "- In-Game Name – The name you use in the game.\n"
+    "- In-Game Name – The name you use in the game.\n\n"
     "- Who Invited You – The name of the person who invited you to the server (if anyone).\n\n"
     "⚠️ Please make sure the information is accurate and complete.\n"
     "Once submitted, a staff member will review your verification and grant access as soon as possible."
@@ -25,14 +25,11 @@ class VerificationTicketView(View):
         roles = await db.get_roles()
         staff_id = roles.get("staff") if roles else None
         admin_id = roles.get("admin") if roles else None
-
         is_admin = admin_id and any(r.id == admin_id for r in interaction.user.roles)
         is_staff = interaction.user.guild_permissions.administrator or (staff_id and any(r.id == staff_id for r in interaction.user.roles))
-
         if not (is_admin or is_staff):
             await interaction.response.send_message("Only staff/admin can close verification tickets.", ephemeral=True)
             return
-
         await interaction.response.send_message("Deleting verification channel...", ephemeral=True)
         try:
             await interaction.channel.delete(reason=f"Verification closed by {interaction.user}")
@@ -53,7 +50,6 @@ class VerificationModal(Modal):
         if guild is None:
             return
 
-        # Load parent category
         parent_category = None
         cat_id = self.category_id
         if not cat_id:
@@ -63,27 +59,22 @@ class VerificationModal(Modal):
             cand = guild.get_channel(int(cat_id))
             parent_category = cand if isinstance(cand, discord.CategoryChannel) else None
 
-        # Channel permissions
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
         }
-
         roles = await db.get_roles()
         staff_role = guild.get_role(roles.get("staff")) if roles else None
         admin_role = guild.get_role(roles.get("admin")) if roles else None
-
         if staff_role:
             overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_messages=True)
         if admin_role:
             overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_messages=True, manage_channels=True)
 
-        # Safe channel name
-        safe_name = f"verify-{interaction.user.name}".lower().replace(" ", "-")[:90]
-
+        safe_name = f"verify-{interaction.user.name}".lower().replace(" ", "-")
         try:
             ch = await guild.create_text_channel(
-                name=safe_name,
+                name=safe_name[:90],
                 category=parent_category,
                 overwrites=overwrites,
                 reason=f"Verification ticket for {interaction.user}",
@@ -92,25 +83,18 @@ class VerificationModal(Modal):
             await interaction.followup.send(f"Could not create verification channel: {e}", ephemeral=True)
             return
 
-        # Get modal input values
         in_game = self.children[0].value
         invited_by = self.children[1].value or "—"
-
-        # Embed styling
         embed = discord.Embed(
-            title="🛡️ Verification Request",
+            title="Verification Request",
             description=f"Requester: {interaction.user.mention}",
             color=discord.Color.blurple(),
             timestamp=datetime.utcnow(),
         )
         embed.add_field(name="In-game name", value=in_game, inline=False)
         embed.add_field(name="Invited by", value=invited_by, inline=False)
-        embed.set_footer(text="Please wait for a staff member to review your request.")
 
-        # Ping requestor + staff
-        mention = f"{interaction.user.mention} {staff_role.mention if staff_role else (admin_role.mention if admin_role else '')}"
-
-        # Send message
+        mention = staff_role.mention if staff_role else (admin_role.mention if admin_role else "")
         msg = await ch.send(content=mention, embed=embed, view=VerificationTicketView())
         try:
             await msg.pin()
@@ -161,7 +145,6 @@ class VerificationModule(commands.Cog):
         )
         view = VerificationPanelView(category_id)
         await ctx.respond(embed=embed, view=view)
-
 
 def setup(bot):
     bot.add_cog(VerificationModule(bot))
