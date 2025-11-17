@@ -12,8 +12,6 @@ if not TOKEN:
     print("ERROR: DISCORD_BOT_TOKEN not set!")
     exit(1)
 
-GUILD_ID = 123456789012345678  # <-- Replace with your server ID
-
 # ---------- BOT INTENTS ----------
 intents = discord.Intents.default()
 intents.message_content = True
@@ -23,12 +21,13 @@ bot = commands.Bot(command_prefix="/", intents=intents)
 @bot.event
 async def on_ready():
     try:
-        # Sync commands for your guild only (instant availability)
-        guild = discord.Object(id=GUILD_ID)
-        await bot.tree.sync(guild=guild)
-        print("✅ Slash commands synced for guild.")
-
-        # Restore persistent panels if cog loaded
+        if hasattr(bot, "tree"):
+            await bot.tree.sync()
+        if hasattr(bot, "sync_commands"):
+            await bot.sync_commands()
+        print("✅ Slash commands synced.")
+        
+        # Restore persistent panels
         try:
             persistent_panels_cog = bot.get_cog("PersistentPanels")
             if persistent_panels_cog:
@@ -36,7 +35,7 @@ async def on_ready():
                 print("✅ Persistent panels restored.")
         except Exception as e:
             print(f"❌ Failed to restore persistent panels: {e}")
-
+            
     except Exception as e:
         print(f"❌ Slash command sync failed: {e}")
 
@@ -51,7 +50,7 @@ initial_extensions = [
     "verification",       # verification panel/tickets
     "persistent_panels",  # persistent panels with auto-refresh
     "bot_speak",          # optional
-    "leaderboard"         # points/leaderboard cog with rename support
+    "leaderboard"         # new leaderboard module with rename support
 ]
 
 # ---------- ASYNC MAIN ----------
