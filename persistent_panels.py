@@ -62,7 +62,7 @@ class PersistentPanels(commands.Cog):
             return
         
         rows = await db.get_leaderboard()
-        per_page = 20
+        per_page = 10
         total_pages = max(1, (len(rows) + per_page - 1) // per_page)
         
         if not rows:
