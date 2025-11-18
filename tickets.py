@@ -610,21 +610,20 @@ class TicketModule(commands.Cog):
             "**Pick the ticket type that fits your request📜 **\n"
             "- https://discord.com/channels/1345073229026562079/1358536986679443496\n"
             "------------------------------------------------------------\n"
-**1. UltraSpeaker Express**
--# - The First Speaker
-**2. Ultra Gramiel Express**
--# - Ultra Gramiel
-**3. Daily 4-Man Express**
--# - Daily 4-Man Ultra Bosses
-**4. Daily 7-Man Express**
--# - Daily 7-Man Ultra Bosses
-**5. Weekly Ultra Express**
--# - Weekly Ultra Bosses (excluding speaker, grim and gramiel)
-**6. GrimChallenge Express**
--# - Mechabinky & Raxborg 2.0
-**7. Daily Temple Express**
--# - Daily TempleShrine
-
+  "**1. UltraSpeaker Express**\n"
+    "-# - The First Speaker\n"
+    "**2. Ultra Gramiel Express**\n"
+    "-# - Ultra Gramiel\n"
+    "**3. Daily 4-Man Express**\n"
+    "-# - Daily 4-Man Ultra Bosses\n"
+    "**4. Daily 7-Man Express**\n"
+    "-# - Daily 7-Man Ultra Bosses\n"
+    "**5. Weekly Ultra Express**\n"
+    "-# - Weekly Ultra Bosses (excluding speaker, grim and gramiel)\n"
+    "**6. GrimChallenge Express**\n"
+    "-# - Mechabinky & Raxborg 2.0\n"
+    "**7. Daily Temple Express**\n"
+    "-# - Daily TempleShrine\n"
             "-----------------------------------------------------------\n"
             "## How it works📢 \n"
             "- ✅ Select a \"ticket type\"\n"
