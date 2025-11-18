@@ -65,3 +65,4 @@ class LeaderboardView(discord.ui.View):
         self._sync_buttons()
 
         await interaction.response.edit_message(embed=embed, view=self)
+
