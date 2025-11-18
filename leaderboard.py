@@ -21,7 +21,7 @@ async def create_leaderboard_embed(page: int = 1, per_page: int = 10) -> discord
 
     description = "\n".join(lines) if lines else "No entries yet."
     embed = discord.Embed(
-        title="🏆 HELPER'S LEADERBOARD SEASON 7 🏆",
+        title="🏆 HELPER'S LEADERBOARD SEASON 8 🏆",
         description=description,
         color=ACCENT,
     )
@@ -63,4 +63,5 @@ class LeaderboardView(discord.ui.View):
         self.current_page += 1
         embed = await create_leaderboard_embed(self.current_page, self.per_page)
         self._sync_buttons()
+
         await interaction.response.edit_message(embed=embed, view=self)
