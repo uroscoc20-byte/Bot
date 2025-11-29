@@ -445,21 +445,30 @@ class TicketActionView(discord.ui.View):
         # Delete ticket from active tickets
         await bot.db.delete_ticket(ticket["channel_id"])
         
-        # ===== REMOVE ALL PERMISSIONS =====
+        # ===== FULLY REMOVE ALL PERMISSIONS - EXPLICIT DENY =====
         guild = interaction.guild
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
         helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
         
-        # 1. Remove REQUESTOR permissions
+        # 1. DENY REQUESTOR ALL PERMISSIONS
         requestor = guild.get_member(ticket["requestor_id"])
         if requestor:
             try:
-                await interaction.channel.set_permissions(requestor, overwrite=None)
-            except:
-                pass
+                await interaction.channel.set_permissions(
+                    requestor,
+                    view_channel=False,
+                    send_messages=False,
+                    read_message_history=False,
+                    add_reactions=False,
+                    attach_files=False,
+                    embed_links=False,
+                    read_messages=False
+                )
+            except Exception as e:
+                print(f"Failed to remove requestor permissions: {e}")
         
-        # 2. Remove individual HELPER permissions (except staff/admin)
+        # 2. DENY INDIVIDUAL HELPERS ALL PERMISSIONS (except staff/admin)
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
@@ -470,19 +479,40 @@ class TicketActionView(discord.ui.View):
                 if staff_role and staff_role in helper.roles:
                     is_helper_staff = True
                 
-                # Only remove if not staff/admin
+                # Only deny if not staff/admin
                 if not is_helper_staff:
                     try:
-                        await interaction.channel.set_permissions(helper, overwrite=None)
-                    except:
-                        pass
+                        await interaction.channel.set_permissions(
+                            helper,
+                            view_channel=False,
+                            send_messages=False,
+                            read_message_history=False,
+                            add_reactions=False,
+                            attach_files=False,
+                            embed_links=False,
+                            read_messages=False
+                        )
+                    except Exception as e:
+                        print(f"Failed to remove helper permissions: {e}")
         
-        # 3. Remove HELPER ROLE permission from channel
+        # 3. DENY HELPER ROLE ALL PERMISSIONS (EXPLICIT DENY OVERRIDES CATEGORY)
         if helper_role:
             try:
-                await interaction.channel.set_permissions(helper_role, overwrite=None)
-            except:
-                pass
+                await interaction.channel.set_permissions(
+                    helper_role,
+                    view_channel=False,
+                    send_messages=False,
+                    read_message_history=False,
+                    add_reactions=False,
+                    attach_files=False,
+                    embed_links=False,
+                    read_messages=False,
+                    manage_messages=False,
+                    manage_channels=False
+                )
+                print(f"✅ Successfully DENIED Helper role from channel {interaction.channel.name}")
+            except Exception as e:
+                print(f"❌ Failed to DENY helper role permissions: {e}")
         
         # Create delete confirmation embed with button
         delete_embed = discord.Embed(
