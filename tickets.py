@@ -366,7 +366,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="close_ticket")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Close and reward ticket - STAFF/ADMIN ONLY"""
+        """Close and reward ticket - STAFF/ADMIN ONLY - ULTIMATE DEBUG VERSION"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -426,11 +426,34 @@ class TicketActionView(discord.ui.View):
         
         await bot.db.delete_ticket(ticket["channel_id"])
         
-        # ===== BLOCK EVERYONE EXCEPT STAFF/ADMIN =====
+        # ===== ULTIMATE DEBUG MODE =====
         guild = interaction.guild
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
         helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
+        
+        print("\n" + "="*60)
+        print(f"🔒 CLOSING TICKET: {interaction.channel.name}")
+        print("="*60)
+        
+        print(f"\n📋 TICKET INFO:")
+        print(f"   Requestor ID: {ticket['requestor_id']}")
+        print(f"   Helper IDs: {ticket['helpers']}")
+        print(f"   Category: {ticket['category']}")
+        
+        print(f"\n🎭 ROLE INFO:")
+        print(f"   Admin Role: {admin_role.name if admin_role else 'NOT FOUND'} (ID: {config.ROLE_IDS.get('ADMIN')})")
+        print(f"   Staff Role: {staff_role.name if staff_role else 'NOT FOUND'} (ID: {config.ROLE_IDS.get('STAFF')})")
+        print(f"   Helper Role: {helper_role.name if helper_role else 'NOT FOUND'} (ID: {config.ROLE_IDS.get('HELPER')})")
+        
+        print(f"\n📊 PERMISSIONS BEFORE CLOSE:")
+        for target, overwrite in interaction.channel.overwrites.items():
+            if isinstance(target, discord.Role):
+                print(f"   Role: {target.name} → {overwrite}")
+            elif isinstance(target, discord.Member):
+                print(f"   User: {target.name} → {overwrite}")
+            else:
+                print(f"   Other: {target} → {overwrite}")
         
         # Build new overwrites - ONLY staff can see
         new_overwrites = {
@@ -440,8 +463,11 @@ class TicketActionView(discord.ui.View):
         
         if admin_role:
             new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            print(f"\n✅ Adding Admin role to new overwrites")
+        
         if staff_role:
             new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            print(f"✅ Adding Staff role to new overwrites")
         
         # EXPLICITLY BLOCK REQUESTOR
         requestor = guild.get_member(ticket["requestor_id"])
@@ -452,6 +478,9 @@ class TicketActionView(discord.ui.View):
                 send_messages=False,
                 read_message_history=False
             )
+            print(f"❌ BLOCKING Requestor: {requestor.name}")
+        else:
+            print(f"⚠️ Requestor NOT FOUND (ID: {ticket['requestor_id']})")
         
         # EXPLICITLY BLOCK ALL HELPERS (individual users)
         for helper_id in ticket["helpers"]:
@@ -461,8 +490,10 @@ class TicketActionView(discord.ui.View):
                 is_helper_staff = False
                 if admin_role and admin_role in helper.roles:
                     is_helper_staff = True
+                    print(f"⏭️ Skipping {helper.name} (has Admin role)")
                 if staff_role and staff_role in helper.roles:
                     is_helper_staff = True
+                    print(f"⏭️ Skipping {helper.name} (has Staff role)")
                 
                 # Only block if not staff/admin
                 if not is_helper_staff:
@@ -472,6 +503,9 @@ class TicketActionView(discord.ui.View):
                         send_messages=False,
                         read_message_history=False
                     )
+                    print(f"❌ BLOCKING Helper: {helper.name}")
+            else:
+                print(f"⚠️ Helper NOT FOUND (ID: {helper_id})")
         
         # EXPLICITLY BLOCK HELPER ROLE
         if helper_role:
@@ -481,13 +515,42 @@ class TicketActionView(discord.ui.View):
                 send_messages=False,
                 read_message_history=False
             )
+            print(f"❌ BLOCKING Helper Role: {helper_role.name}")
+        else:
+            print(f"⚠️ Helper Role NOT FOUND")
+        
+        print(f"\n🔄 APPLYING NEW OVERWRITES...")
+        print(f"   Total overwrites to apply: {len(new_overwrites)}")
         
         # APPLY THE NEW PERMISSIONS
         try:
             await interaction.channel.edit(overwrites=new_overwrites)
-            print(f"✅ Successfully blocked all non-staff from {interaction.channel.name}")
+            print(f"✅ Channel.edit() completed successfully!")
+        except discord.Forbidden as e:
+            print(f"❌ FORBIDDEN ERROR: {e}")
+            print(f"   Bot lacks permissions to edit channel!")
+        except discord.HTTPException as e:
+            print(f"❌ HTTP EXCEPTION: {e}")
         except Exception as e:
-            print(f"❌ Failed to update channel permissions: {e}")
+            print(f"❌ UNKNOWN ERROR: {e}")
+        
+        # Wait for Discord to process
+        await asyncio.sleep(1)
+        
+        print(f"\n📊 PERMISSIONS AFTER CLOSE:")
+        # Refresh channel object
+        channel = guild.get_channel(interaction.channel.id)
+        for target, overwrite in channel.overwrites.items():
+            if isinstance(target, discord.Role):
+                print(f"   Role: {target.name} → {overwrite}")
+            elif isinstance(target, discord.Member):
+                print(f"   User: {target.name} → {overwrite}")
+            else:
+                print(f"   Other: {target} → {overwrite}")
+        
+        print("="*60)
+        print(f"🔒 TICKET CLOSE COMPLETE")
+        print("="*60 + "\n")
         
         delete_embed = discord.Embed(
             title="🗑️ Delete Channel?",
