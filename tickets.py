@@ -7,41 +7,25 @@ from database import db
 from datetime import datetime
 from io import StringIO
 
-# Set up logger
-logger = logging.getLogger(__name__)
-
 # ---------- DEFAULTS ----------
 DEFAULT_POINT_VALUES = {
     "Ultra Speaker Express": 8,
-    "UltraSpeaker Express": 8,  # Match panel name
     "Ultra Gramiel Express": 7,
     "4-Man Ultra Daily Express": 4,
-    "Daily 4-Man Express": 4,  # Match panel name
     "7-Man Ultra Daily Express": 10,
-    "Daily 7-Man Express": 10,  # Match panel name
     "Ultra Weekly Express": 12,
-    "Weekly Ultra Express": 12,  # Match panel name
     "Grim Express": 10,
-    "GrimChallenge Express": 10,  # Match panel name
     "Daily Temple Express": 6,
 }
-DEFAULT_HELPER_SLOTS = {"Daily 7-Man Express": 6, "GrimChallenge Express": 6}
+DEFAULT_HELPER_SLOTS = {"7-Man Ultra Daily Express": 6, "Grim Express": 6}
 DEFAULT_SLOTS = 3
 DEFAULT_QUESTIONS = ["In-game name?*", "Server name?*", "Room?*", "Anything else?"]
 
 def get_fallback_category(category_name: str):
-    points = DEFAULT_POINT_VALUES.get(category_name, 0)
-    print(f"[FALLBACK DEBUG] Category: '{category_name}' -> Points: {points}")
-    
-    # Warn if category not found
-    if points == 0 and category_name not in DEFAULT_POINT_VALUES:
-        print(f"[FALLBACK DEBUG] WARNING: Category '{category_name}' not found in DEFAULT_POINT_VALUES!")
-        print(f"[FALLBACK DEBUG] Available categories: {list(DEFAULT_POINT_VALUES.keys())}")
-    
     return {
         "name": category_name,
         "questions": DEFAULT_QUESTIONS,
-        "points": points,
+        "points": DEFAULT_POINT_VALUES.get(category_name, 0),
         "slots": DEFAULT_HELPER_SLOTS.get(category_name, DEFAULT_SLOTS),
     }
 
@@ -71,50 +55,28 @@ def bot_can_manage_channels(interaction: discord.Interaction) -> bool:
     return bool(getattr(gp, "administrator", False) or getattr(gp, "manage_channels", False))
 
 # ---------- UTILITY ----------
-async def generate_ticket_transcript(ticket_info, rewarded=False, closer_id=None):
+async def generate_ticket_transcript(ticket_info, rewarded=False):
     channel = ticket_info["embed_msg"].channel
     transcript_lines = []
-    image_urls = []
-    
     async for msg in channel.history(limit=100, oldest_first=True):
         content = msg.content or ""
         transcript_lines.append(f"[{msg.created_at}] {msg.author}: {content}")
-        
-        # Collect image URLs for transcript (RAM optimized - only URLs, not actual images)
-        if msg.attachments:
-            for attachment in msg.attachments:
-                if attachment.content_type and attachment.content_type.startswith('image/'):
-                    image_urls.append(f"[{msg.created_at}] {msg.author}: {attachment.url}")
-        if msg.embeds:
-            for embed in msg.embeds:
-                if embed.image and embed.image.url:
-                    image_urls.append(f"[{msg.created_at}] {msg.author}: {embed.image.url}")
-                if embed.thumbnail and embed.thumbnail.url:
-                    image_urls.append(f"[{msg.created_at}] {msg.author}: {embed.thumbnail.url}")
 
-    closer_info = f"Closed by: <@{closer_id}>" if closer_id else "Closed by: Unknown"
-    
     transcript_text = (
         f"Ticket Transcript for {ticket_info['category']}\n"
         f"Requestor: <@{ticket_info['requestor']}>\n"
         f"Helpers: {', '.join(f'<@{h}>' for h in ticket_info['helpers'] if h)}\n"
         f"Opened at: {channel.created_at}\n"
         f"Closed at: {datetime.utcnow()}\n"
-        f"{closer_info}\n"
         f"Rewarded: {'Yes' if rewarded else 'No'}\n\n"
         + "\n".join(transcript_lines)
     )
-    
-    # Add image URLs section if any were found
-    if image_urls:
-        transcript_text += "\n\n--- IMAGES ---\n" + "\n".join(image_urls)
 
     embed = discord.Embed(
         title="📝 Ticket Transcript",
         description=f"Category: **{ticket_info['category']}**",
         color=discord.Color.blurple(),
     )
-    closer_info = f"<@{closer_id}>" if closer_id else "Unknown"
     embed.add_field(
         name="ℹ️ Info",
         value=(
@@ -122,7 +84,6 @@ async def generate_ticket_transcript(ticket_info, rewarded=False, closer_id=None
             f"Helpers: {', '.join(f'<@{h}>' for h in ticket_info['helpers'] if h) or 'None'}\n"
             f"Opened: {channel.created_at}\n"
             f"Closed: {datetime.utcnow()}\n"
-            f"Closed by: {closer_info}\n"
             f"Rewarded: {'Yes' if rewarded else 'No'}"
         ),
         inline=False,
@@ -139,39 +100,7 @@ async def generate_ticket_transcript(ticket_info, rewarded=False, closer_id=None
         transcript_channel = guild.get_channel(transcript_channel_id)
         if transcript_channel:
             file = discord.File(StringIO(transcript_text), filename=f"transcript-{channel.name}.txt")
-            
-            # Send main transcript
             await transcript_channel.send(embed=embed, file=file)
-            
-            # Send images as separate messages for better visibility
-            if image_urls:
-                await transcript_channel.send("**📷 Images from this ticket:**")
-                
-                # Send each image as a separate message for maximum visibility
-                for img_info in image_urls:
-                    try:
-                        # Parse timestamp and author from the stored format
-                        parts = img_info.split("] ", 1)
-                        if len(parts) == 2:
-                            timestamp_part = parts[0] + "]"
-                            author_and_url = parts[1]
-                            author_part, url = author_and_url.rsplit(": ", 1)
-                            
-                            # Create embed for each image
-                            img_embed = discord.Embed(
-                                title="📷 Ticket Image",
-                                description=f"**{author_part}** - {timestamp_part}",
-                                color=discord.Color.blue()
-                            )
-                            img_embed.set_image(url=url)
-                            
-                            # Send each image as a separate message
-                            await transcript_channel.send(embed=img_embed)
-                            
-                    except Exception as e:
-                        logger.warning(f"Failed to send image {img_info}: {e}")
-                        # Fallback: send as text with clickable link
-                        await transcript_channel.send(f"📷 {img_info}")
 
 # ---------- TICKET MODAL ----------
 class TicketModal(Modal):
@@ -203,11 +132,10 @@ class TicketModal(Modal):
                 return
 
             try:
-                number = await db.get_global_ticket_number()
-            except Exception as e:
-                logger.warning(f"Failed to get global ticket number: {e}")
+                number = await db.increment_ticket_number(self.category)
+            except Exception:
                 number = 1
-            channel_name = f"ticket-{number}"
+            channel_name = f"{self.category.lower().replace(' ', '-')}-{number}"
 
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -219,8 +147,7 @@ class TicketModal(Modal):
                 cat_id = await db.get_ticket_category()
                 cand = guild.get_channel(cat_id) if cat_id else None
                 parent_category = cand if isinstance(cand, discord.CategoryChannel) else None
-            except Exception as e:
-                logger.warning(f"Failed to get ticket category: {e}")
+            except Exception:
                 parent_category = None
 
             ticket_channel = None
@@ -374,39 +301,7 @@ class TicketView(View):
         self.category = category
         self.requestor_id = requestor_id
         self.add_item(Button(label="Join", style=discord.ButtonStyle.green, custom_id="join_ticket", emoji="➕"))
-        self.add_item(Button(label="Close", style=discord.ButtonStyle.red, custom_id="close_ticket", emoji="🔒"))
-
-
-class DeleteConfirmationView(View):
-    def __init__(self, channel_id: int):
-        super().__init__(timeout=60)
-        self.channel_id = channel_id
-
-    @discord.ui.button(label="Yes, Delete Channel", style=discord.ButtonStyle.red, custom_id="confirm_delete")
-    async def confirm_delete(self, button: discord.ui.Button, interaction: discord.Interaction):
-        ticket_info = active_tickets.get(self.channel_id)
-        if not ticket_info:
-            await interaction.response.send_message("Ticket not found.", ephemeral=True)
-            return
-        
-        # Mark as confirmed and proceed with deletion
-        ticket_info["close_confirmed"] = True
-        
-        # Call the final close method
-        try:
-            await interaction.response.send_message("✅ Confirmed. Deleting ticket channel...", ephemeral=True)
-            active_tickets.pop(interaction.channel.id, None)
-            try:
-                await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
-            except Exception:
-                pass
-        except Exception as e:
-            logger.exception(f"Error during final close: {e}")
-            await interaction.followup.send("⚠️ Error deleting channel. Please try again.", ephemeral=True)
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.gray, custom_id="cancel_delete")
-    async def cancel_delete(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("Channel deletion cancelled.", ephemeral=True)
+        self.add_item(Button(label="Close", style=discord.ButtonStyle.gray, custom_id="close_ticket", emoji="🧹"))
 
 class RewardChoiceView(View):
     def __init__(self, ticket_channel_id: int):
@@ -419,49 +314,14 @@ class RewardChoiceView(View):
         if not ticket_info:
             await interaction.response.send_message("Ticket context missing.", ephemeral=True)
             return
-        
-        try:
-            category = ticket_info["category"]
-            cat_data = await db.get_category(category)
-            fallback_data = get_fallback_category(category)
-            
-            # Always use fallback points to ensure correct values
-            # Database might have 0 points or wrong values
-            points_value = fallback_data["points"]
-            
-            # Log what we're using
-            if cat_data and cat_data.get("points", 0) > 0:
-                print(f"[REWARD DEBUG] Database has {cat_data['points']} points, but using fallback {points_value}")
-            else:
-                print(f"[REWARD DEBUG] Using fallback points: {points_value} (database had: {cat_data.get('points', 'None') if cat_data else 'None'})")
-            
-            logger.info(f"Rewarding helpers for '{category}' ticket")
-            logger.info(f"Database category data: {cat_data}")
-            logger.info(f"Fallback category data: {fallback_data}")
-            logger.info(f"Final points value: {points_value}")
-            logger.info(f"Helpers to reward: {[h for h in ticket_info.get('helpers', []) if h]}")
-            
-            # Print to console for immediate debugging
-            print(f"[REWARD DEBUG] Category: '{category}'")
-            print(f"[REWARD DEBUG] Database data: {cat_data}")
-            print(f"[REWARD DEBUG] Fallback data: {fallback_data}")
-            print(f"[REWARD DEBUG] Points value: {points_value}")
-            print(f"[REWARD DEBUG] Available in DEFAULT_POINT_VALUES: {category in DEFAULT_POINT_VALUES}")
-            if category in DEFAULT_POINT_VALUES:
-                print(f"[REWARD DEBUG] DEFAULT_POINT_VALUES['{category}'] = {DEFAULT_POINT_VALUES[category]}")
-            
-            if points_value == 0:
-                logger.warning(f"Points value is 0 for category '{category}' - this might be a configuration issue")
-                print(f"[REWARD DEBUG] WARNING: Points value is 0 for '{category}'!")
-            
-            await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
-            ticket_info["rewarded"] = True
-            ticket_info["closed_stage"] = 2
-            await interaction.response.send_message(f"✅ Helpers rewarded with {points_value} points each. Click Close again to generate transcript.", ephemeral=True)
-            
-        except Exception as e:
-            logger.exception(f"Error in reward_yes: {e}")
-            await interaction.response.send_message(f"⚠️ Error rewarding helpers: {e}", ephemeral=True)
+        category = ticket_info["category"]
+        cat_data = await db.get_category(category)
+        points_value = (cat_data or get_fallback_category(category))["points"]
+        await PointsModule.reward_ticket_helpers({**ticket_info, "points": points_value})
+        await generate_ticket_transcript(ticket_info, rewarded=True)
+        ticket_info["rewarded"] = True
+        ticket_info["closed_stage"] = 2
+        await interaction.response.send_message("Helpers rewarded and transcript generated. Click Close again to delete.", ephemeral=True)
 
     @discord.ui.button(label="No reward", style=discord.ButtonStyle.gray, custom_id="reward_no")
     async def reward_no(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -469,9 +329,10 @@ class RewardChoiceView(View):
         if not ticket_info:
             await interaction.response.send_message("Ticket context missing.", ephemeral=True)
             return
+        await generate_ticket_transcript(ticket_info, rewarded=False)
         ticket_info["rewarded"] = False
         ticket_info["closed_stage"] = 2
-        await interaction.response.send_message("No rewards given. Click Close again to generate transcript.", ephemeral=True)
+        await interaction.response.send_message("Transcript generated without rewards. Click Close again to delete.", ephemeral=True)
 
 # ---------- SELECT MENU ----------
 class TicketSelect(Select):
@@ -489,22 +350,9 @@ class TicketSelect(Select):
                 restricted_ids.append(int(r))
             except Exception:
                 pass
-        
-        # Only block if user has a restricted role AND no admin/staff role
         if any(rid in member_role_ids for rid in restricted_ids):
-            # Check if user has admin or staff role to override restriction
-            admin_role_id = roles_cfg.get("admin") if roles_cfg else None
-            staff_role_id = roles_cfg.get("staff") if roles_cfg else None
-            
-            has_override_role = False
-            if admin_role_id and any(r.id == admin_role_id for r in interaction.user.roles):
-                has_override_role = True
-            if staff_role_id and any(r.id == staff_role_id for r in interaction.user.roles):
-                has_override_role = True
-            
-            if not has_override_role:
-                await interaction.response.send_message("You cannot open a ticket due to your role restrictions.", ephemeral=True)
-                return
+            await interaction.response.send_message("You cannot open a ticket.", ephemeral=True)
+            return
 
         if not bot_can_manage_channels(interaction):
             await interaction.response.send_message(
@@ -517,34 +365,12 @@ class TicketSelect(Select):
         cat_data = await db.get_category(category_name)
         if not cat_data:
             cat_data = get_fallback_category(category_name)
-        else:
-            # Force correct slot numbers from fallback configuration
-            fallback_slots = DEFAULT_HELPER_SLOTS.get(category_name, DEFAULT_SLOTS)
-            cat_data["slots"] = fallback_slots
         await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
 
 class TicketPanelView(View):
     def __init__(self, categories):
         super().__init__(timeout=None)
-        # Create a button per category instead of a select menu
-        for cat in categories[:25]:  # Discord max 25 buttons per view
-            name = cat.get("name", "Category")
-            panel_id = cat.get("id", 0)
-            label = f"{panel_id}. {name}" if panel_id > 0 else name
-            custom_id = f"open_ticket::{name}"
-            # Custom darker red button with URE emoji
-            self.add_item(Button(
-                label=label, 
-                style=discord.ButtonStyle.secondary, 
-                custom_id=custom_id,
-                emoji="<:URE:1429522388395233331>"
-            ))
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return True
-
-    async def on_timeout(self):
-        pass
+        self.add_item(TicketSelect(categories))
 
 # ---------- COG ----------
 class TicketModule(commands.Cog):
@@ -579,77 +405,27 @@ class TicketModule(commands.Cog):
 
         categories = await db.get_categories()
         if not categories:
-            # Use the exact category names from the panel text
-            panel_categories = [
-                {"name": "UltraSpeaker Express", "id": 1},
-                {"name": "Ultra Gramiel Express", "id": 2}, 
-                {"name": "Daily 4-Man Express", "id": 3},
-                {"name": "Daily 7-Man Express", "id": 4},
-                {"name": "Weekly Ultra Express", "id": 5},
-                {"name": "GrimChallenge Express", "id": 6},
-                {"name": "Daily Temple Express", "id": 7}
-            ]
             categories = [{
-                "name": cat["name"],
-                "id": cat["id"],
+                "name": name,
                 "questions": DEFAULT_QUESTIONS,
-                "points": DEFAULT_POINT_VALUES.get(cat["name"], 5),
-                "slots": DEFAULT_HELPER_SLOTS.get(cat["name"], DEFAULT_SLOTS),
-            } for cat in panel_categories]
+                "points": DEFAULT_POINT_VALUES[name],
+                "slots": DEFAULT_HELPER_SLOTS.get(name, DEFAULT_SLOTS),
+            } for name in DEFAULT_POINT_VALUES.keys()]
         panel_cfg = await db.get_panel_config()
         view = TicketPanelView(categories)
         embed = discord.Embed(
-            title="🎮 IN-GAME ASSISTANCE 🎮",
+            title="🎮 In-game Assistance",
             description=panel_cfg.get("text", "Select a service below to create a help ticket. Our helpers will assist you!"),
             color=panel_cfg.get("color", 0x5865F2),
         )
-        # Custom panel content per request
-        embed.clear_fields()
-        embed.description = (
-            "# CHOOSE YOUR TICKET TYPE🚂 💨 \n"
-            "**Pick the ticket type that fits your request📜 **\n"
-            "- https://discord.com/channels/1345073229026562079/1358536986679443496\n"
-            "------------------------------------------------------------\n"
-            "**1. UltraSpeaker Express**"
-            " - The First Speaker\n"
-            "**2. Ultra Gramiel Express**"
-            " - Ultra Gramiel\n"
-            "**3. Daily 4-Man Express**"
-            " - Daily 4-Man Ultra Bosses\n"
-            "**4. Daily 7-Man Express**"
-            " - Daily 7-Man Ultra Bosses\n"
-            "**5. Weekly Ultra Express**"
-            " - Weekly Ultra Bosses (excluding speaker, grim and gramiel)\n"
-            "**6. GrimChallenge Express**"
-            " - Mechabinky & Raxborg 2.0\n"
-            "**7. Daily Temple Express**"
-            " - Daily TempleShrine\n"
-            "-----------------------------------------------------------\n"
-            "## How it works📢 \n"
-            "- ✅ Select a \"ticket type\"\n"
-            "- 📝 Fill out the form\n"
-            "- 💁 Helpers join\n"
-            "- 🎉 Get help in your private ticket"
+        services = [f"- **{cat['name']}** — {cat.get('points', 0)} points" for cat in categories]
+        embed.add_field(name="📋 Available Services", value="**" + ("\n".join(services) or "No services configured") + "**", inline=False)
+        embed.add_field(
+            name="ℹ️ How it works",
+            value="1. Select a service\n2. Fill out the form\n3. Helpers join\n4. Get help in your private ticket!",
+            inline=False,
         )
-        message = await ctx.respond(embed=embed, view=view)
-        
-        # Save to database for persistence
-        if hasattr(message, 'message'):
-            message = message.message
-        
-        panel_data = {
-            "categories": categories,
-            "panel_config": panel_cfg,
-            "panel_type": "ticket"
-        }
-        await db.save_persistent_panel(
-            channel_id=ctx.channel.id,
-            message_id=message.id,
-            panel_type="ticket",
-            data=panel_data
-        )
-        
-        await ctx.followup.send("✅ **Persistent ticket panel created!** It will auto-refresh every 10 minutes.", ephemeral=True)
+        await ctx.respond(embed=embed, view=view)
 
     @commands.slash_command(name="ticket_kick", description="Remove a user from ticket embed; optionally from channel")
     async def ticket_kick(
@@ -703,312 +479,17 @@ class TicketModule(commands.Cog):
         where = "embed only" if not from_channel else "embed and channel"
         await ctx.respond(f"Removed {user.mention} from this ticket ({where}).", ephemeral=True)
 
-    @commands.slash_command(name="reset_ticket_counter", description="Reset ticket counter to 1 (admin only)")
-    async def reset_ticket_counter(self, ctx: discord.ApplicationContext):
-        if not ctx.user.guild_permissions.administrator:
-            await ctx.respond("You do not have permission to use this.", ephemeral=True)
-            return
-        
-        try:
-            # Reset all category counters to 1
-            categories = ["UltraSpeaker Express", "Ultra Gramiel Express", "Daily 4-Man Express", 
-                         "Daily 7-Man Express", "Weekly Ultra Express", "GrimChallenge Express", "Daily Temple Express"]
-            
-            for category in categories:
-                await db.set_ticket_number(category, 1)
-            
-            await ctx.respond("✅ Ticket counter reset to 1 for all categories.", ephemeral=True)
-        except Exception as e:
-            logger.exception(f"Error resetting ticket counter: {e}")
-            await ctx.respond(f"❌ Error resetting counter: {e}", ephemeral=True)
-
-    @commands.slash_command(name="give_points", description="Give points to helpers who joined a specific ticket panel (admin only)")
-    async def give_points(
-        self,
-        ctx: discord.ApplicationContext,
-        panel_id: discord.Option(int, "Panel ID (1-8) to reward helpers from"),
-        points: discord.Option(int, "Points to give each helper", required=True),
-        helpers: discord.Option(str, "Comma-separated list of helper user IDs or mentions", required=True)
-    ):
-        if not ctx.user.guild_permissions.administrator:
-            await ctx.respond("You do not have permission to use this.", ephemeral=True)
-            return
-        
-        if panel_id < 1 or panel_id > 8:
-            await ctx.respond("❌ Panel ID must be between 1 and 8.", ephemeral=True)
-            return
-        
-        try:
-            # Parse helper IDs from the input
-            helper_ids = []
-            for helper_str in helpers.split(','):
-                helper_str = helper_str.strip()
-                # Remove <@ and > if it's a mention
-                if helper_str.startswith('<@') and helper_str.endswith('>'):
-                    helper_str = helper_str[2:-1]
-                # Remove ! if it's a nickname mention
-                if helper_str.startswith('!'):
-                    helper_str = helper_str[1:]
-                
-                try:
-                    helper_id = int(helper_str)
-                    helper_ids.append(helper_id)
-                except ValueError:
-                    await ctx.respond(f"❌ Invalid helper ID: {helper_str}", ephemeral=True)
-                    return
-            
-            if not helper_ids:
-                await ctx.respond("❌ No valid helper IDs provided.", ephemeral=True)
-                return
-            
-            # Get helper usernames for confirmation
-            helper_names = []
-            for helper_id in helper_ids:
-                try:
-                    helper = ctx.guild.get_member(helper_id)
-                    if helper:
-                        helper_names.append(helper.display_name)
-                    else:
-                        helper_names.append(f"Unknown User ({helper_id})")
-                except Exception:
-                    helper_names.append(f"Unknown User ({helper_id})")
-            
-            # Give points to each helper
-            points_given = 0
-            for helper_id in helper_ids:
-                try:
-                    current_points = await db.get_points(helper_id)
-                    new_points = current_points + points
-                    await db.set_points(helper_id, new_points)
-                    points_given += 1
-                except Exception as e:
-                    logger.warning(f"Failed to give points to {helper_id}: {e}")
-            
-            await ctx.respond(
-                f"✅ **Panel {panel_id} Rewards**\n"
-                f"**Points given:** {points} to each helper\n"
-                f"**Helpers rewarded:** {points_given}/{len(helper_ids)}\n"
-                f"**Helper names:** {', '.join(helper_names)}",
-                ephemeral=True
-            )
-            
-        except Exception as e:
-            logger.exception(f"Error in give_points: {e}")
-            await ctx.respond(f"❌ Error giving points: {e}", ephemeral=True)
-
-    async def _first_close(self, interaction: discord.Interaction, ticket_info):
-        """First close: remove helpers/requestor, move to stage 1"""
-        try:
-            removed_users = []
-            
-            # Remove all helpers who joined via button (except staff/admin)
-            roles_cfg = await db.get_roles()
-            staff_role_id = roles_cfg.get("staff") if roles_cfg else None
-            admin_role_id = roles_cfg.get("admin") if roles_cfg else None
-            staff_role = interaction.guild.get_role(staff_role_id) if staff_role_id else None
-            admin_role = interaction.guild.get_role(admin_role_id) if admin_role_id else None
-            
-            for helper_id in ticket_info["helpers"]:
-                if helper_id:
-                    try:
-                        helper = interaction.guild.get_member(helper_id)
-                        if helper:
-                            # Check if helper has staff or admin role (immune to removal)
-                            is_staff = False
-                            if staff_role and staff_role in helper.roles:
-                                is_staff = True
-                            if admin_role and admin_role in helper.roles:
-                                is_staff = True
-                            if helper.guild_permissions.administrator:
-                                is_staff = True
-                            
-                            if not is_staff:
-                                await interaction.channel.set_permissions(helper, view_channel=False, send_messages=False)
-                                removed_users.append(f"Helper: {helper.display_name}")
-                            else:
-                                removed_users.append(f"Helper: {helper.display_name} (STAFF - kept in channel)")
-                    except Exception:
-                        pass
-            
-            # Remove all members with helper role
-            helper_role_id = roles_cfg.get("helper") if roles_cfg else None
-            if helper_role_id:
-                helper_role = interaction.guild.get_role(helper_role_id)
-                if helper_role:
-                    # Remove helper role permissions from channel
-                    try:
-                        await interaction.channel.set_permissions(helper_role, view_channel=False, send_messages=False)
-                        removed_users.append(f"Helper Role: {helper_role.name} (role permissions removed)")
-                    except Exception:
-                        pass
-                    
-                    # Remove individual members with helper role (except staff/admin)
-                    for member in interaction.channel.members:
-                        if helper_role in member.roles:
-                            # Check if member has staff or admin role (immune to removal)
-                            is_staff = False
-                            if staff_role and staff_role in member.roles:
-                                is_staff = True
-                            if admin_role and admin_role in member.roles:
-                                is_staff = True
-                            if member.guild_permissions.administrator:
-                                is_staff = True
-                            
-                            if not is_staff:
-                                try:
-                                    await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
-                                    removed_users.append(f"Helper Role Member: {member.display_name}")
-                                except Exception:
-                                    pass
-                            else:
-                                removed_users.append(f"Helper Role Member: {member.display_name} (STAFF - kept in channel)")
-            
-            # Remove requestor (unless they have staff/admin role)
-            try:
-                requestor = interaction.guild.get_member(ticket_info["requestor"])
-                if requestor:
-                    # Check if requestor has staff or admin role (immune to removal)
-                    is_staff = False
-                    if staff_role and staff_role in requestor.roles:
-                        is_staff = True
-                    if admin_role and admin_role in requestor.roles:
-                        is_staff = True
-                    if requestor.guild_permissions.administrator:
-                        is_staff = True
-                    
-                    if not is_staff:
-                        await interaction.channel.set_permissions(requestor, view_channel=False, send_messages=False)
-                        removed_users.append(f"Requestor: {requestor.display_name}")
-                    else:
-                        removed_users.append(f"Requestor: {requestor.display_name} (STAFF - kept in channel)")
-            except Exception:
-                pass
-            
-            # Move to stage 1
-            ticket_info["closed_stage"] = 1
-            
-            removed_text = "\n".join(removed_users) if removed_users else "No users to remove"
-            await interaction.response.send_message(f"✅ Ticket closed. Removed from channel:\n{removed_text}\n\nUse `/give_points` to reward helpers, then click Close again to generate transcript.", ephemeral=True)
-                
-        except Exception as e:
-            logger.exception(f"Error during first close: {e}")
-            await interaction.response.send_message("⚠️ Error closing ticket. Please try again.", ephemeral=True)
-
-    async def _second_close(self, interaction: discord.Interaction, ticket_info):
-        """Second close: generate transcript and show confirmation"""
-        try:
-            # Generate transcript
-            await generate_ticket_transcript(ticket_info, rewarded=False, closer_id=interaction.user.id)
-            
-            # Move to stage 2
-            ticket_info["closed_stage"] = 2
-            
-            # Show confirmation dialog
-            embed = discord.Embed(
-                title="⚠️ Confirm Channel Deletion",
-                description=(
-                    "**Are you sure you want to delete this ticket channel?**\n\n"
-                    "**This will:**\n"
-                    "• **PERMANENTLY DELETE** the ticket channel\n"
-                    "• Remove all messages and history\n"
-                    "• **This action cannot be undone!**\n\n"
-                    "**Transcript has been generated and saved.**"
-                ),
-                color=discord.Color.red()
-            )
-            
-            view = DeleteConfirmationView(interaction.channel.id)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-                
-        except Exception as e:
-            logger.exception(f"Error during second close: {e}")
-            await interaction.response.send_message("⚠️ Error generating transcript. Please try again.", ephemeral=True)
-
-    async def _final_close(self, interaction: discord.Interaction, ticket_info):
-        """Final close: delete the channel"""
-        await interaction.response.send_message("Deleting ticket channel...", ephemeral=True)
-        active_tickets.pop(interaction.channel.id, None)
-        try:
-            await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
-        except Exception:
-            pass
-
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
         if interaction.type != discord.InteractionType.component:
             return
         channel_id = interaction.channel.id
         ticket_info = active_tickets.get(channel_id)
-        # Panel buttons are outside ticket channels
+        if not ticket_info:
+            return
 
         custom_id = interaction.data["custom_id"]
 
-        # Handle panel category buttons
-        if custom_id.startswith("open_ticket::"):
-            try:
-                category_name = custom_id.split("::", 1)[1]
-                logger.info(f"User {interaction.user} clicked ticket button for category: {category_name}")
-                
-                # Check for restricted roles (only block if explicitly restricted)
-                member_role_ids = [role.id for role in interaction.user.roles]
-                roles_cfg = await db.get_roles()
-                restricted_raw = roles_cfg.get("restricted", []) if roles_cfg else []
-                restricted_ids = []
-                for r in restricted_raw:
-                    try:
-                        restricted_ids.append(int(r))
-                    except Exception:
-                        pass
-                
-                # Only block if user has a restricted role AND no admin/staff role
-                if any(rid in member_role_ids for rid in restricted_ids):
-                    # Check if user has admin or staff role to override restriction
-                    admin_role_id = roles_cfg.get("admin") if roles_cfg else None
-                    staff_role_id = roles_cfg.get("staff") if roles_cfg else None
-                    
-                    has_override_role = False
-                    if admin_role_id and any(r.id == admin_role_id for r in interaction.user.roles):
-                        has_override_role = True
-                    if staff_role_id and any(r.id == staff_role_id for r in interaction.user.roles):
-                        has_override_role = True
-                    
-                    if not has_override_role:
-                        logger.info(f"User {interaction.user} blocked by restricted role")
-                        await interaction.response.send_message("You cannot open a ticket due to your role restrictions.", ephemeral=True)
-                        return
-
-                # Check bot permissions
-                if not bot_can_manage_channels(interaction):
-                    logger.warning(f"Bot lacks manage channels permission in {interaction.guild}")
-                    await interaction.response.send_message(
-                        "I need the 'Manage Channels' permission to create your ticket. Please ask an admin to grant it.",
-                        ephemeral=True,
-                    )
-                    return
-
-                cat_data = await db.get_category(category_name)
-                if not cat_data:
-                    cat_data = get_fallback_category(category_name)
-                    logger.info(f"Using fallback category for: {category_name}")
-                else:
-                    # Force correct slot numbers from fallback configuration
-                    fallback_slots = DEFAULT_HELPER_SLOTS.get(category_name, DEFAULT_SLOTS)
-                    cat_data["slots"] = fallback_slots
-                    logger.info(f"Using database category for: {category_name}, forced slots: {fallback_slots}")
-                
-                logger.info(f"Sending modal for category: {category_name}, slots: {cat_data['slots']}")
-                await interaction.response.send_modal(TicketModal(category_name, cat_data["questions"], interaction.user.id, cat_data["slots"]))
-                return
-            except Exception as e:
-                logger.exception(f"Error handling panel button click: {e}")
-                try:
-                    await interaction.response.send_message("⚠️ Something went wrong. Please try again.", ephemeral=True)
-                except Exception:
-                    pass
-                return
-
-        if not ticket_info:
-            return
         if custom_id == "join_ticket":
             if interaction.user.id == ticket_info["requestor"]:
                 await interaction.response.send_message("You cannot join your own ticket.", ephemeral=True)
@@ -1019,13 +500,6 @@ class TicketModule(commands.Cog):
             if any(rid in member_role_ids for rid in restricted_ids):
                 await interaction.response.send_message("You cannot join this ticket.", ephemeral=True)
                 return
-            
-            # Check if user is already helping in another ticket
-            for ticket_id, other_ticket in active_tickets.items():
-                if ticket_id != channel_id and interaction.user.id in [h for h in other_ticket["helpers"] if h]:
-                    await interaction.response.send_message("You can only join one ticket at a time. Leave your current ticket first.", ephemeral=True)
-                    return
-            
             # Prevent duplicate joins and enforce capacity
             if interaction.user.id in [h for h in ticket_info["helpers"] if h]:
                 await interaction.response.send_message("You are already listed as a helper on this ticket.", ephemeral=True)
@@ -1090,20 +564,6 @@ class TicketModule(commands.Cog):
             await interaction.response.send_message("Use /ticket_kick to remove a specific member.", ephemeral=True)
             return
 
-        elif custom_id == "submit_proof":
-            # Only allow the requestor to submit proof
-            if interaction.user.id != ticket_info["requestor"]:
-                await interaction.response.send_message("Only the ticket requestor can submit proof.", ephemeral=True)
-                return
-            
-            # Check if proof already submitted
-            if ticket_info.get("proof_url"):
-                await interaction.response.send_message("Proof has already been submitted for this ticket.", ephemeral=True)
-                return
-            
-            await interaction.response.send_modal(ProofInstructionsModal(interaction.channel.id))
-            return
-
         elif custom_id == "close_ticket":
             roles_cfg = await db.get_roles()
             staff_role_id = roles_cfg.get("staff")
@@ -1117,18 +577,45 @@ class TicketModule(commands.Cog):
             if not (is_staff or is_requestor):
                 await interaction.response.send_message("Only staff, admins, or the requestor can close this ticket.", ephemeral=True)
                 return
-            
-            # Check current stage
             stage = ticket_info.get("closed_stage", 0)
             if stage == 0:
-                # First close: remove helpers/requestor, move to stage 1
-                await self._first_close(interaction, ticket_info)
+                # 1st close: only remove helpers' channel access (keep staff/admin)
+                helpers = [h for h in ticket_info["helpers"] if h]
+                # Revoke helper role view access for the channel
+                helper_role_id = roles_cfg.get("helper") if roles_cfg else None
+                if helper_role_id:
+                    helper_role = interaction.guild.get_role(helper_role_id)
+                    if helper_role:
+                        try:
+                            await interaction.channel.set_permissions(helper_role, view_channel=False, send_messages=False)
+                        except Exception:
+                            pass
+                # Revoke per-user access for non-staff/non-admin helpers
+                staff_role_id = roles_cfg.get("staff") if roles_cfg else None
+                admin_role_id = roles_cfg.get("admin") if roles_cfg else None
+                for uid in helpers:
+                    member = interaction.guild.get_member(uid)
+                    if not member:
+                        continue
+                    try:
+                        is_admin = bool(admin_role_id and any(r.id == admin_role_id for r in member.roles))
+                        is_staff_member = bool(staff_role_id and any(r.id == staff_role_id for r in member.roles))
+                        if not (is_admin or is_staff_member):
+                            await interaction.channel.set_permissions(member, view_channel=False, send_messages=False)
+                    except Exception:
+                        pass
+                ticket_info["closed_stage"] = 1
+                await interaction.response.send_message("Helpers removed from channel. Click again to choose reward.", ephemeral=True)
             elif stage == 1:
-                # Second close: generate transcript + confirmation, move to stage 2
-                await self._second_close(interaction, ticket_info)
+                view = RewardChoiceView(interaction.channel.id)
+                await interaction.response.send_message("Reward helpers?", view=view, ephemeral=True)
             else:
-                # Final stage: delete channel
-                await self._final_close(interaction, ticket_info)
+                await interaction.response.send_message("Deleting ticket channel...", ephemeral=True)
+                active_tickets.pop(channel_id, None)
+                try:
+                    await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
+                except Exception:
+                    pass
 
 def setup(bot):
     bot.add_cog(TicketModule(bot))

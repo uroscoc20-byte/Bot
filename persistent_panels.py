@@ -30,7 +30,7 @@ class PersistentPanels(commands.Cog):
                     if panel["panel_type"] == "leaderboard":
                         # Refresh leaderboard
                         page = panel["data"].get("page", 1)
-                        per_page = panel["data"].get("per_page", 10)
+                        per_page = panel["data"].get("per_page", 20)
                         embed = await create_leaderboard_embed(page=page, per_page=per_page)
                         view = LeaderboardView(page, panel["data"].get("total_pages", 1), per_page)
                         await message.edit(embed=embed, view=view)
@@ -62,7 +62,7 @@ class PersistentPanels(commands.Cog):
             return
         
         rows = await db.get_leaderboard()
-        per_page = 10
+        per_page = 20
         total_pages = max(1, (len(rows) + per_page - 1) // per_page)
         
         if not rows:
@@ -155,7 +155,7 @@ class PersistentPanels(commands.Cog):
                     if panel["panel_type"] == "leaderboard":
                         # Restore leaderboard view
                         page = panel["data"].get("page", 1)
-                        per_page = panel["data"].get("per_page", 10)
+                        per_page = panel["data"].get("per_page", 20)
                         total_pages = panel["data"].get("total_pages", 1)
                         embed = await create_leaderboard_embed(page=page, per_page=per_page)
                         view = LeaderboardView(page, total_pages, per_page)
