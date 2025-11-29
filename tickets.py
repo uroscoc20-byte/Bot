@@ -572,7 +572,6 @@ def create_ticket_embed(
     if concerns != "None":
         embed.add_field(name="📝 Concerns", value=concerns, inline=False)
     
-    embed.set_footer(text=f"Room Number: {random_number}")
     
     return embed
 
