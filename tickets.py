@@ -8,6 +8,7 @@ import random
 from typing import Optional, List
 import json
 import io
+import asyncio
 import config
 
 
@@ -235,7 +236,8 @@ class TicketModal(discord.ui.Modal):
         if staff_role:
             overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if helper_role:
-            overwrites[helper_role] = discord.PermissionOverwrite(view_channel=True, send_messages=False)
+            # HELPERS CAN NOW TALK FROM THE START
+            overwrites[helper_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         
         try:
             channel = await category.create_text_channel(
@@ -348,13 +350,6 @@ class TicketActionView(discord.ui.View):
             selected_server=selected_server
         )
         
-        # Give helper view permission
-        await interaction.channel.set_permissions(
-            interaction.user,
-            view_channel=True,
-            send_messages=True
-        )
-        
         # Update message
         await interaction.message.edit(embed=embed)
         
@@ -445,11 +440,16 @@ class TicketActionView(discord.ui.View):
         # Delete ticket from active tickets
         await bot.db.delete_ticket(ticket["channel_id"])
         
-        # ===== FULLY REMOVE ALL PERMISSIONS - EXPLICIT DENY =====
+        # ===== REMOVE ALL PERMISSIONS WITH DEBUG =====
         guild = interaction.guild
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
         helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
+        
+        print(f"\n🔍 === CLOSING TICKET: {interaction.channel.name} ===")
+        print(f"🔍 Current overwrites BEFORE removal:")
+        for target, overwrite in interaction.channel.overwrites.items():
+            print(f"   - {target}: {overwrite}")
         
         # 1. DENY REQUESTOR ALL PERMISSIONS
         requestor = guild.get_member(ticket["requestor_id"])
@@ -459,16 +459,13 @@ class TicketActionView(discord.ui.View):
                     requestor,
                     view_channel=False,
                     send_messages=False,
-                    read_message_history=False,
-                    add_reactions=False,
-                    attach_files=False,
-                    embed_links=False,
-                    read_messages=False
+                    read_message_history=False
                 )
+                print(f"✅ Removed requestor: {requestor.name}")
             except Exception as e:
-                print(f"Failed to remove requestor permissions: {e}")
+                print(f"❌ Failed to remove requestor: {e}")
         
-        # 2. DENY INDIVIDUAL HELPERS ALL PERMISSIONS (except staff/admin)
+        # 2. DENY INDIVIDUAL HELPERS (except staff/admin)
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
@@ -486,18 +483,22 @@ class TicketActionView(discord.ui.View):
                             helper,
                             view_channel=False,
                             send_messages=False,
-                            read_message_history=False,
-                            add_reactions=False,
-                            attach_files=False,
-                            embed_links=False,
-                            read_messages=False
+                            read_message_history=False
                         )
+                        print(f"✅ Removed helper: {helper.name}")
                     except Exception as e:
-                        print(f"Failed to remove helper permissions: {e}")
+                        print(f"❌ Failed to remove helper {helper.name}: {e}")
+                else:
+                    print(f"⏭️ Skipped helper {helper.name} (is staff/admin)")
         
-        # 3. DENY HELPER ROLE ALL PERMISSIONS (EXPLICIT DENY OVERRIDES CATEGORY)
+        # 3. DENY HELPER ROLE - TRIPLE CHECK WITH DEBUG
         if helper_role:
+            print(f"\n🔍 Helper role found: {helper_role.name} (ID: {helper_role.id})")
+            print(f"🔍 Bot's top role: {guild.me.top_role.name} (position: {guild.me.top_role.position})")
+            print(f"🔍 Helper role position: {helper_role.position}")
+            
             try:
+                # First attempt: Explicit deny
                 await interaction.channel.set_permissions(
                     helper_role,
                     view_channel=False,
@@ -505,14 +506,35 @@ class TicketActionView(discord.ui.View):
                     read_message_history=False,
                     add_reactions=False,
                     attach_files=False,
-                    embed_links=False,
-                    read_messages=False,
-                    manage_messages=False,
-                    manage_channels=False
+                    embed_links=False
                 )
-                print(f"✅ Successfully DENIED Helper role from channel {interaction.channel.name}")
+                print(f"✅ Step 1: Set DENY permissions for Helper role")
+                
+                # Wait for Discord API
+                await asyncio.sleep(0.5)
+                
+                # Verify the change
+                new_overwrites = interaction.channel.overwrites
+                if helper_role in new_overwrites:
+                    print(f"✅ Step 2: Verified Helper role in overwrites: {new_overwrites[helper_role]}")
+                else:
+                    print(f"⚠️ Step 2: Helper role NOT in overwrites after set!")
+                
+            except discord.Forbidden:
+                print(f"❌ FORBIDDEN: Bot lacks permissions to edit Helper role")
+            except discord.HTTPException as e:
+                print(f"❌ HTTP Exception: {e}")
             except Exception as e:
-                print(f"❌ Failed to DENY helper role permissions: {e}")
+                print(f"❌ Unknown error removing Helper role: {e}")
+        else:
+            print(f"❌ Helper role NOT FOUND! Config has: {config.ROLE_IDS.get('HELPER')}")
+        
+        # Final check
+        await asyncio.sleep(1)
+        print(f"\n🔍 Current overwrites AFTER removal:")
+        for target, overwrite in interaction.channel.overwrites.items():
+            print(f"   - {target}: {overwrite}")
+        print(f"🔍 === END TICKET CLOSE DEBUG ===\n")
         
         # Create delete confirmation embed with button
         delete_embed = discord.Embed(
@@ -556,7 +578,6 @@ class DeleteChannelView(discord.ui.View):
         )
         
         # Delete channel after 5 seconds
-        import asyncio
         await asyncio.sleep(5)
         try:
             await interaction.channel.delete(reason=f"Ticket closed and deleted by {interaction.user}")
@@ -609,8 +630,6 @@ def create_ticket_embed(
     
     if concerns != "None":
         embed.add_field(name="📝 Concerns", value=concerns, inline=False)
-    
-    # NO FOOTER - Room number removed
     
     return embed
 
