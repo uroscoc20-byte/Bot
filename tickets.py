@@ -293,10 +293,25 @@ class TicketModal(discord.ui.Modal):
             "is_closed": False
         })
         
-        await interaction.followup.send(
-            f"✅ Ticket created: {channel.mention}",
-            ephemeral=True
+        # Generate join commands for requestor
+        requestor_commands = generate_join_commands(
+            self.category, 
+            self.selected_bosses, 
+            random_number, 
+            self.selected_server
         )
+        
+        # Send room info ONLY to requestor (ephemeral)
+        if requestor_commands:
+            await interaction.followup.send(
+                f"✅ Ticket created: {channel.mention}\n\n**🎮 Your Room Number: `{random_number}`**\n\n**Join Commands:**\n{requestor_commands}",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                f"✅ Ticket created: {channel.mention}\n\n**🎮 Your Room Number: `{random_number}`**",
+                ephemeral=True
+            )
 
 
 class TicketActionView(discord.ui.View):
