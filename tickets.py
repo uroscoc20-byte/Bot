@@ -321,7 +321,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="join_ticket")
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Helper joins ticket"""
+        """Helper joins ticket - ONE TICKET AT A TIME"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -341,6 +341,28 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ You are already helping this ticket.", ephemeral=True)
             return
         
+        # === CHECK IF HELPER IS ALREADY IN ANOTHER TICKET ===
+        all_tickets = await bot.db.get_all_active_tickets()
+        
+        for other_ticket in all_tickets:
+            # Skip current ticket
+            if other_ticket["channel_id"] == interaction.channel_id:
+                continue
+            
+            # Check if user is helping another ticket
+            if interaction.user.id in other_ticket["helpers"]:
+                # Get channel mention
+                other_channel = bot.get_channel(other_ticket["channel_id"])
+                channel_mention = other_channel.mention if other_channel else f"<#{other_ticket['channel_id']}>"
+                
+                await interaction.response.send_message(
+                    f"❌ You are already helping another ticket: {channel_mention}\n\n"
+                    f"Please finish or leave that ticket before joining a new one.",
+                    ephemeral=True
+                )
+                return
+        
+        # === ORIGINAL JOIN LOGIC ===
         slots = config.HELPER_SLOTS.get(ticket["category"], 3)
         if len(ticket["helpers"]) >= slots:
             await interaction.response.send_message("❌ This ticket already has the maximum number of helpers.", ephemeral=True)
