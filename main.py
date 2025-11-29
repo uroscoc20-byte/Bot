@@ -1,74 +1,120 @@
 # main.py
+# Discord Helper Ticket Bot - Main Entry Point
+
 import discord
 from discord.ext import commands
 import os
-import webserver
 import asyncio
-from database import db
+from dotenv import load_dotenv
+from database import Database
 
-# ---------- LOAD ENV ----------
+# Load environment variables
+load_dotenv()
+
+# Import webserver for uptime monitoring
+try:
+    import webserver
+    webserver.start()
+    print("✅ Webserver started for uptime monitoring")
+except Exception as e:
+    print(f"⚠️ Webserver not started: {e}")
+
+# Bot configuration
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:
-    print("ERROR: DISCORD_BOT_TOKEN not set!")
-    exit(1)
+    raise ValueError("❌ DISCORD_BOT_TOKEN not found in environment variables!")
 
-# ---------- BOT INTENTS ----------
+# Initialize bot with intents
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="/", intents=intents)
+intents.members = True
+intents.guilds = True
 
-# ---------- EVENTS ----------
+bot = commands.Bot(
+    command_prefix="!",  # Prefix for text commands (mainly using slash commands)
+    intents=intents,
+    help_command=None,  # We'll create custom help
+)
+
+# Initialize database
+db = Database()
+
+# Store database in bot for access in cogs
+bot.db = db
+
+
 @bot.event
 async def on_ready():
+    """Called when bot successfully connects to Discord"""
+    print(f"✅ Bot logged in as {bot.user.name} (ID: {bot.user.id})")
+    print(f"📊 Connected to {len(bot.guilds)} guild(s)")
+    
+    # Initialize database
+    await bot.db.init()
+    print("✅ Database initialized")
+    
+    # Sync slash commands
     try:
-        if hasattr(bot, "tree"):
-            await bot.tree.sync()
-        if hasattr(bot, "sync_commands"):
-            await bot.sync_commands()
-        print("✅ Slash commands synced.")
-        
-        # Restore persistent panels
-        try:
-            persistent_panels_cog = bot.get_cog("PersistentPanels")
-            if persistent_panels_cog:
-                await persistent_panels_cog.restore_persistent_panels()
-                print("✅ Persistent panels restored.")
-        except Exception as e:
-            print(f"❌ Failed to restore persistent panels: {e}")
-            
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} slash command(s)")
     except Exception as e:
-        print(f"❌ Slash command sync failed: {e}")
+        print(f"⚠️ Failed to sync commands: {e}")
+    
+    # Set bot status
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name="tickets | /help"
+        )
+    )
+    print("✅ Bot is ready!")
 
-# ---------- EXTENSIONS ----------
-initial_extensions = [
-    "setup",
-    "tickets",
-    "points",
-    "custom_commands",
-    "custom_simple",  # manage !custom text commands and edit via modal
-    "audit_log",      # log slash and prefix commands
-    "verification",   # verification panel/tickets
-    "persistent_panels",  # persistent panels with auto-refresh
-    "bot_speak"  # optional
-]
 
-# ---------- ASYNC MAIN ----------
-async def main():
-    await db.init()
-    print("✅ Database initialized.")
+@bot.event
+async def on_error(event, *args, **kwargs):
+    """Global error handler"""
+    print(f"❌ Error in {event}: {args} {kwargs}")
 
-    for ext in initial_extensions:
+
+@bot.event
+async def on_command_error(ctx, error):
+    """Command error handler"""
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ You don't have permission to use this command.", ephemeral=True)
+    elif isinstance(error, commands.CommandNotFound):
+        pass  # Ignore unknown commands
+    else:
+        print(f"❌ Command error: {error}")
+
+
+async def load_cogs():
+    """Load all cog files"""
+    cogs = [
+        "cogs.tickets",
+        "cogs.verification",
+        "cogs.leaderboard",
+        "cogs.admin",
+    ]
+    
+    for cog in cogs:
         try:
-            bot.load_extension(ext)
-            print(f"✅ Loaded extension: {ext}")
+            await bot.load_extension(cog)
+            print(f"✅ Loaded {cog}")
         except Exception as e:
-            print(f"❌ Failed to load extension {ext}: {e}")
+            print(f"❌ Failed to load {cog}: {e}")
 
-    webserver.start()
-    print("✅ Webserver started for Render healthchecks.")
 
-    await bot.start(TOKEN)
+async def main():
+    """Main entry point"""
+    async with bot:
+        await load_cogs()
+        await bot.start(TOKEN)
 
-# ---------- RUN ----------
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n👋 Bot shutting down...")
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")

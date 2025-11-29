@@ -1,5 +1,18 @@
-py-cord==2.6.0
-aiosqlite>=0.20.0
-Flask>=3.0.3,<4.0.0
-firebase-admin>=6.6.0,<7.0.0
-google-cloud-firestore>=2.15.0,<3.0.0
+# requirements.txt
+# Discord Helper Ticket Bot Dependencies
+
+# Discord Bot
+discord.py==2.4.0
+py-cord==2.6.1
+
+# Database
+aiosqlite==0.20.0
+
+# Optional: Firebase/Firestore support
+firebase-admin==6.5.0
+
+# Web Server (for uptime monitoring)
+flask==3.0.3
+
+# Utilities
+python-dotenv==1.0.1
