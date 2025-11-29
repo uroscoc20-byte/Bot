@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import config
+import json
 
 
 def is_admin_or_staff(interaction: discord.Interaction) -> bool:
@@ -252,20 +253,29 @@ async def setup_admin(bot):
         ticket["helpers"].remove(user.id)
         await bot.db.save_ticket(ticket)
         
-        # Remove channel permissions
-        try:
-            await interaction.channel.set_permissions(
-                user,
-                overwrite=None  # Reset to default (no access)
-            )
-        except:
-            pass
+        # Remove channel permissions (unless staff/admin)
+        guild = interaction.guild
+        admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
+        staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        
+        is_user_staff = False
+        if admin_role and admin_role in user.roles:
+            is_user_staff = True
+        if staff_role and staff_role in user.roles:
+            is_user_staff = True
+        
+        if not is_user_staff:
+            try:
+                await interaction.channel.set_permissions(user, overwrite=None)
+            except:
+                pass
         
         # Update ticket embed
         from tickets import create_ticket_embed
-        import json
         
         selected_bosses = json.loads(ticket.get("selected_bosses", "[]"))
+        selected_server = ticket.get("selected_server", "Unknown")
+        
         embed = create_ticket_embed(
             category=ticket["category"],
             requestor_id=ticket["requestor_id"],
@@ -273,7 +283,8 @@ async def setup_admin(bot):
             concerns=ticket.get("concerns", "None"),
             helpers=ticket["helpers"],
             random_number=ticket["random_number"],
-            selected_bosses=selected_bosses
+            selected_bosses=selected_bosses,
+            selected_server=selected_server
         )
         
         # Find and update the ticket message

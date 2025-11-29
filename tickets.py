@@ -26,11 +26,23 @@ class TicketButton(discord.ui.Button):
     """Button for each ticket category"""
     def __init__(self, category: str, row: int):
         label = category.replace(" Express", "")
+        
+        # Set emoji based on category
+        emoji_map = {
+            "UltraSpeaker Express": "🔊",
+            "Ultra Gramiel Express": "⚔️",
+            "Daily 4-Man Express": "👥",
+            "Daily 7-Man Express": "👥",
+            "Weekly Ultra Express": "📅",
+            "GrimChallenge Express": "💀",
+            "Daily Temple Express": "⛩️",
+        }
+        
         super().__init__(
             label=label,
-            style=discord.ButtonStyle.secondary,
+            style=discord.ButtonStyle.primary,
             custom_id=f"open_ticket::{category}",
-            emoji="🎫",
+            emoji=emoji_map.get(category, "🎫"),
             row=row
         )
         self.category = category
@@ -54,9 +66,20 @@ class TicketButton(discord.ui.Button):
                 ephemeral=True
             )
         else:
-            # Direct to modal (no boss selection needed)
-            modal = TicketModal(self.category, selected_bosses=None)
-            await interaction.response.send_modal(modal)
+            # Direct to server selection modal
+            view = ServerSelectView(self.category, selected_bosses=None)
+            
+            embed = discord.Embed(
+                title=f"🌍 Select Server - {self.category}",
+                description="Choose which server you're playing on:",
+                color=config.COLORS["PRIMARY"]
+            )
+            
+            await interaction.response.send_message(
+                embed=embed,
+                view=view,
+                ephemeral=True
+            )
 
 
 class BossSelectView(discord.ui.View):
@@ -97,20 +120,68 @@ class BossSelectMenu(discord.ui.Select):
         )
     
     async def callback(self, interaction: discord.Interaction):
-        """Handle boss selection and open modal"""
+        """Handle boss selection and show server selection"""
         selected_bosses = self.values
         
-        # Show modal with selected bosses
-        modal = TicketModal(self.category, selected_bosses=selected_bosses)
+        # Show server selection
+        view = ServerSelectView(self.category, selected_bosses=selected_bosses)
+        
+        embed = discord.Embed(
+            title=f"🌍 Select Server - {self.category}",
+            description="Choose which server you're playing on:",
+            color=config.COLORS["PRIMARY"]
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ServerSelectView(discord.ui.View):
+    """View with server selection dropdown"""
+    def __init__(self, category: str, selected_bosses: Optional[List[str]] = None):
+        super().__init__(timeout=300)
+        self.category = category
+        self.selected_bosses = selected_bosses or []
+        self.add_item(ServerSelectMenu(category, selected_bosses))
+
+
+class ServerSelectMenu(discord.ui.Select):
+    """Dropdown menu for server selection"""
+    def __init__(self, category: str, selected_bosses: Optional[List[str]] = None):
+        self.category = category
+        self.selected_bosses = selected_bosses or []
+        
+        # Server options
+        servers = ["Swordhaven", "Safiria", "Gravelyn", "Galanoth", "Alteon", "Yorumi"]
+        
+        options = [
+            discord.SelectOption(label=server, value=server, emoji="🌐")
+            for server in servers
+        ]
+        
+        super().__init__(
+            placeholder="Select your server",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id=f"server_select_{category}"
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        """Handle server selection and open modal"""
+        selected_server = self.values[0]
+        
+        # Show modal with selected bosses and server
+        modal = TicketModal(self.category, selected_bosses=self.selected_bosses, selected_server=selected_server)
         await interaction.response.send_modal(modal)
 
 
 class TicketModal(discord.ui.Modal):
     """Modal for ticket creation"""
-    def __init__(self, category: str, selected_bosses: Optional[List[str]] = None):
+    def __init__(self, category: str, selected_bosses: Optional[List[str]] = None, selected_server: str = None):
         super().__init__(title=f"{category} Ticket")
         self.category = category
         self.selected_bosses = selected_bosses or []
+        self.selected_server = selected_server
         
         # In-game name input
         self.in_game_name = discord.ui.TextInput(
@@ -165,10 +236,14 @@ class TicketModal(discord.ui.Modal):
         # Add staff/admin permissions
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
+        
         if admin_role:
             overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if staff_role:
             overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        if helper_role:
+            overwrites[helper_role] = discord.PermissionOverwrite(view_channel=True, send_messages=False)
         
         try:
             channel = await category.create_text_channel(
@@ -187,7 +262,8 @@ class TicketModal(discord.ui.Modal):
             concerns=self.concerns.value or "None",
             helpers=[],
             random_number=random_number,
-            selected_bosses=self.selected_bosses
+            selected_bosses=self.selected_bosses,
+            selected_server=self.selected_server
         )
         
         # Create ticket action buttons
@@ -213,7 +289,8 @@ class TicketModal(discord.ui.Modal):
             "embed_message_id": ticket_msg.id,
             "in_game_name": self.in_game_name.value,
             "concerns": self.concerns.value or "None",
-            "selected_bosses": json.dumps(self.selected_bosses)
+            "selected_bosses": json.dumps(self.selected_bosses),
+            "selected_server": self.selected_server
         })
         
         await interaction.followup.send(
@@ -257,8 +334,9 @@ class TicketActionView(discord.ui.View):
         ticket["helpers"].append(interaction.user.id)
         await bot.db.save_ticket(ticket)
         
-        # Get selected bosses
+        # Get selected bosses and server
         selected_bosses = json.loads(ticket.get("selected_bosses", "[]"))
+        selected_server = ticket.get("selected_server", "Unknown")
         
         # Update embed
         embed = create_ticket_embed(
@@ -268,7 +346,8 @@ class TicketActionView(discord.ui.View):
             concerns=ticket.get("concerns", "None"),
             helpers=ticket["helpers"],
             random_number=ticket["random_number"],
-            selected_bosses=selected_bosses
+            selected_bosses=selected_bosses,
+            selected_server=selected_server
         )
         
         # Give helper view permission
@@ -280,7 +359,23 @@ class TicketActionView(discord.ui.View):
         
         # Update message
         await interaction.message.edit(embed=embed)
-        await interaction.response.send_message(f"✅ {interaction.user.mention} joined as helper!", ephemeral=False)
+        
+        # Send ephemeral join commands to the helper
+        join_commands = generate_join_commands(ticket["category"], selected_bosses, ticket["random_number"], selected_server)
+        
+        if join_commands:
+            await interaction.response.send_message(
+                f"✅ You joined as helper!\n\n**🎮 Join Commands:**\n{join_commands}",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"✅ You joined as helper!",
+                ephemeral=True
+            )
+        
+        # Announce in channel
+        await interaction.channel.send(f"✅ {interaction.user.mention} joined as helper!")
     
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="close_ticket")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -292,13 +387,13 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
             return
         
-        # Check permissions (staff/admin or helper)
+        # Check permissions (staff/admin or requestor)
         member = interaction.user
         is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
-        is_helper = member.id in ticket["helpers"]
+        is_requestor = member.id == ticket["requestor_id"]
         
-        if not (is_staff or is_helper):
-            await interaction.response.send_message("❌ Only staff or helpers can close this ticket.", ephemeral=True)
+        if not (is_staff or is_requestor):
+            await interaction.response.send_message("❌ Only staff or the requestor can close this ticket.", ephemeral=True)
             return
         
         await interaction.response.defer()
@@ -315,8 +410,8 @@ class TicketActionView(discord.ui.View):
         helpers_text = ", ".join([f"<@{h}>" for h in ticket["helpers"]]) if ticket["helpers"] else "None"
         
         closed_embed = discord.Embed(
-            title=f"🎫 {ticket['category']} (Closed)",
-            color=config.COLORS["PRIMARY"],
+            title=f"🔒 {ticket['category']} (Closed)",
+            color=config.COLORS["SUCCESS"],
             timestamp=discord.utils.utcnow()
         )
         closed_embed.add_field(name="Requestor", value=f"<@{ticket['requestor_id']}>", inline=False)
@@ -344,6 +439,28 @@ class TicketActionView(discord.ui.View):
         # Delete ticket from active tickets
         await bot.db.delete_ticket(ticket["channel_id"])
         
+        # Remove helper permissions (but keep staff/admin)
+        guild = interaction.guild
+        admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
+        staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        
+        for helper_id in ticket["helpers"]:
+            helper = guild.get_member(helper_id)
+            if helper:
+                # Check if helper is staff or admin
+                is_helper_staff = False
+                if admin_role and admin_role in helper.roles:
+                    is_helper_staff = True
+                if staff_role and staff_role in helper.roles:
+                    is_helper_staff = True
+                
+                # Only remove if not staff/admin
+                if not is_helper_staff:
+                    try:
+                        await interaction.channel.set_permissions(helper, overwrite=None)
+                    except:
+                        pass
+        
         await interaction.followup.send(
             "✅ Ticket closed! Points awarded. Channel will be deleted in 10 seconds...",
             ephemeral=False
@@ -365,7 +482,8 @@ def create_ticket_embed(
     concerns: str,
     helpers: List[int],
     random_number: int,
-    selected_bosses: Optional[List[str]] = None
+    selected_bosses: Optional[List[str]] = None,
+    selected_server: str = "Unknown"
 ) -> discord.Embed:
     """Create ticket information embed"""
     embed = discord.Embed(
@@ -375,9 +493,9 @@ def create_ticket_embed(
         timestamp=discord.utils.utcnow()
     )
     
-    embed.add_field(name="Requestor", value=f"<@{requestor_id}>", inline=True)
-    embed.add_field(name="In-game Name", value=in_game_name, inline=True)
-    embed.add_field(name="Ticket ID", value=f"#{random_number}", inline=True)
+    embed.add_field(name="👤 Requestor", value=f"<@{requestor_id}>", inline=True)
+    embed.add_field(name="🎮 In-game Name", value=in_game_name, inline=True)
+    embed.add_field(name="🌍 Server", value=selected_server, inline=True)
     
     # Show selected bosses if any
     if selected_bosses:
@@ -386,15 +504,6 @@ def create_ticket_embed(
             value="\n".join([f"⚔️ {boss}" for boss in selected_bosses]),
             inline=False
         )
-        
-        # Generate /join commands
-        join_commands = generate_join_commands(category, selected_bosses)
-        if join_commands:
-            embed.add_field(
-                name="🎮 Join Commands",
-                value=join_commands,
-                inline=False
-            )
     
     # Helpers section
     slots = config.HELPER_SLOTS.get(category, 3)
@@ -412,18 +521,19 @@ def create_ticket_embed(
     if concerns != "None":
         embed.add_field(name="📝 Concerns", value=concerns, inline=False)
     
-    embed.set_footer(text=f"Use the buttons below to join or close this ticket")
+    embed.set_footer(text=f"Room Number: {random_number}")
     
     return embed
 
 
-def generate_join_commands(category: str, selected_bosses: List[str]) -> str:
-    """Generate /join commands based on selected bosses"""
+def generate_join_commands(category: str, selected_bosses: List[str], room_number: int, server: str) -> str:
+    """Generate /join commands based on selected bosses (EPHEMERAL - shown only to helpers)"""
     commands = []
     
+    # Categories that show join commands
     if category == "Daily 4-Man Express":
         for boss in selected_bosses:
-            commands.append(f"`/join {boss}`")
+            commands.append(f"`/join {boss}-{room_number}`")
     
     elif category == "Daily 7-Man Express":
         for boss in selected_bosses:
@@ -431,17 +541,30 @@ def generate_join_commands(category: str, selected_bosses: List[str]) -> str:
             if boss in config.BOSS_7MAN_COMMANDS:
                 boss_commands = config.BOSS_7MAN_COMMANDS[boss]
                 if len(boss_commands) == 1:
-                    commands.append(f"`/join {boss_commands[0]}`")
+                    commands.append(f"`/join {boss_commands[0]}-{room_number}`")
                 else:
                     # Multiple commands (like Originul)
-                    multi = " **OR** ".join([f"`/join {cmd}`" for cmd in boss_commands])
+                    multi = " **OR** ".join([f"`/join {cmd}-{room_number}`" for cmd in boss_commands])
                     commands.append(f"**{boss}:** {multi}")
             else:
-                commands.append(f"`/join {boss}`")
+                commands.append(f"`/join {boss}-{room_number}`")
     
     elif category == "Weekly Ultra Express":
         for boss in selected_bosses:
-            commands.append(f"`/join {boss}`")
+            commands.append(f"`/join {boss}-{room_number}`")
+    
+    # Categories without boss selection
+    elif category == "UltraSpeaker Express":
+        commands.append(f"`/join UltraSpeaker-{room_number}`")
+    
+    elif category == "Ultra Gramiel Express":
+        commands.append(f"`/join UltraGramiel-{room_number}`")
+    
+    elif category == "GrimChallenge Express":
+        commands.append(f"`/join GrimChallenge-{room_number}`")
+    
+    elif category == "Daily Temple Express":
+        commands.append(f"`/join TempleShrine-{room_number}`")
     
     return "\n".join(commands) if commands else ""
 
@@ -467,7 +590,7 @@ async def generate_transcript(channel: discord.TextChannel, bot, ticket: dict):
         f"=== TRANSCRIPT FOR {channel.name.upper()} ===",
         f"Category: {ticket['category']}",
         f"Requestor: {ticket['requestor_id']}",
-        f"Ticket ID: #{ticket['random_number']}",
+        f"Room Number: {ticket['random_number']}",
         f"Created: {channel.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}",
         "=" * 50,
         ""
@@ -497,7 +620,7 @@ async def generate_transcript(channel: discord.TextChannel, bot, ticket: dict):
     # Send to transcript channel
     embed = discord.Embed(
         title=f"📄 Transcript: {channel.name}",
-        description=f"**Category:** {ticket['category']}\n**Ticket ID:** #{ticket['random_number']}",
+        description=f"**Category:** {ticket['category']}\n**Room Number:** {ticket['random_number']}",
         color=config.COLORS["PRIMARY"],
         timestamp=discord.utils.utcnow()
     )
@@ -520,17 +643,32 @@ async def setup_tickets(bot):
             await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
             return
         
-        # Create panel embed
+        # Create beautiful panel embed
         embed = discord.Embed(
-            title="🎫 Helper Ticket Panel",
+            title="🎫 AQW Helper Ticket System",
             description=(
-                "Click the button below for the category you need help with.\n\n"
-                "**Available Categories:**\n"
-                + "\n".join([f"• {cat}" for cat in config.CATEGORIES])
+                "Welcome to the **Helper Express Service**!\n\n"
+                "Click a button below to create a ticket for the service you need.\n"
+                "Our helpers will assist you as soon as possible!\n\n"
+                "**📋 Available Services:**"
             ),
             color=config.COLORS["PRIMARY"]
         )
-        embed.set_footer(text="Select a category to open a ticket")
+        
+        # Add category descriptions
+        for cat in config.CATEGORIES:
+            meta = config.CATEGORY_METADATA.get(cat, {})
+            points = config.POINT_VALUES.get(cat, 0)
+            slots = config.HELPER_SLOTS.get(cat, 3)
+            
+            embed.add_field(
+                name=f"{cat}",
+                value=f"{meta.get('description', 'No description')}\n💰 **{points} pts** | 👥 **{slots} helpers**",
+                inline=True
+            )
+        
+        embed.set_footer(text="Click a button below to get started! • AQW Express", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+        embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
         
         view = TicketView()
         await interaction.channel.send(embed=embed, view=view)
