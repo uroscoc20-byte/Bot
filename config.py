@@ -8,7 +8,7 @@
 ROLE_IDS = {
     "ADMIN": 1345073680610496602,      # Admin role ID
     "STAFF": 1374821509268373686,      # Staff role ID
-    "HELPER": 1368925578895429654,     # Helper role ID
+    "HELPER": 1392803882115010734,     # Helper role ID
 }
 
 # ============================================================================
@@ -157,25 +157,64 @@ COLORS = {
 # HARDCODED COMMANDS - Pre-defined command responses
 # ============================================================================
 HARDCODED_COMMANDS = {
+    "rrules": {
+        "text": (
+            "## :inbox_tray: Ticket Rules for Requestors :inbox_tray:\n\n"
+            "### :crossed_swords: Respect Comes First\n"
+            "Toxicity, harassment, discrimination, or any disrespectful behavior is not allowed.\n\n"
+            "### :date: Ticket Opening Limits\n"
+            "You can open each ticket category only **twice per reset period** — daily categories up to **2 times per day**, and weekly categories up to **2 times per week**.\n\n"
+            "### :bust_in_silhouette: No Premade Allowed\n"
+            "You may only open a ticket if you're **alone**. Absolutely no premade teams. **Only Helpers + YOU**\n\n"
+            "### :closed_lock_with_key: Always Use a Private Room\n"
+            "Tickets must be opened in a **private room** e.g. `ultraspeaker-2310`. If you use a public room number and anyone else is in the room, the ticket is disqualified.\n\n"
+            "### :performing_arts: Skill Issue ≠ Trolling\n"
+            "It's okay to be bad. However, **sabotaging the run intentionally** or **trolling** in any form is not tolerated. If it happens multiple times, your ability to open tickets may be revoked. (Proof or staff confirmation is required in any complains). **Always listen to helper's calls**\n\n"
+            "### :camera_with_flash: You Must Take the Screenshot\n"
+            "Requestors are **responsible for taking the final screenshot**. If you fail to do this multiple times, you may be banned from opening tickets.\n\n"
+            "### :scales: Use Common Sense\n"
+            "Attempting to exploit loopholes or bend the rules for any reason will be punished without mercy."
+        )
+    },
+    
+    "hrules": {
+        "text": (
+            "## :inbox_tray: Ticket Rules for Helpers :inbox_tray:\n\n"
+            "### :crossed_swords: Respect Comes First\n"
+            "Toxicity, harassment, discrimination, or any disrespectful behavior is not allowed.\n\n"
+            "### :no_entry_sign: No Ticket-Hopping\n"
+            "You **cannot leave a ticket** to join another one for better chances or rewards.\n\n"
+            "**The only exception:** If your ticket has no available helpers, and another ticket urgently needs help to proceed. In this case, you may assist there so the group can finish and free up helpers for others.\n\n"
+            "### :robot: Botting = Cheating\n"
+            "Using bots, scripts, premium clients or whichever automation tools is considered **cheating in-game** and is **not allowed** inside tickets.\n\n"
+            "### :performing_arts: No Trolling\n"
+            "Helpers are **not allowed to troll or sabotage** under any circumstance. Unlike requestors, skill issue is **not a valid excuse**. Helpers must be reliable.\n\n"
+            "Trolling will result in your Helper role being revoked (if confirmed by staff or with valid proof).\n\n"
+            "### :camera_with_flash: Stay for the Screenshot\n"
+            "**Leaving before the screenshot means you won't be counted.** Helpers must stay until the very end.\n\n"
+            "### :scales: Use Common Sense\n"
+            "Attempting to exploit loopholes or bend the rules for any reason will be punished without mercy.\n\n"
+            "### :saluting_face: Be a Good Helper\n"
+            "- Try your best **not to rush other helpers** during tickets. Wait till everyone is ready before beginning the fight.\n"
+            "- Use **meta classes and proper comps** for fast and reliable clears.\n"
+            "- **Adjust to comps:**\n"
+            "  - *Example:* You are phasing the boss at `/Astralshrine` and you notice the classes **VDK, LR, LOO, LH, CSS, AF** are already present. **Do not equip VDK** and expect the previous wearer to adjust — **do it yourself!**"
+        )
+    },
+    
     "proof": {
         "text": (
-            "📸 **Proof Submission Guidelines**\n\n"
-            "Please attach your proof here:\n"
-            "• Screenshot of completion\n"
-            "• Video recording\n"
-            "• Game logs\n\n"
-            "⚠️ Make sure the proof clearly shows the activity was completed."
+            "## :camera_with_flash: Submit Your Proof\n\n"
+            "After requesting a ticket and completing the objective, make sure to provide proof!\n\n"
+            "### :x: No Proof = No Points\n\n"
+            "**1️⃣ Take a screenshot** of the **Helpers' names** and the **quests they completed**.\n\n"
+            "**2️⃣ Send the screenshot** in your designated proof channel.\n\n"
+            "### :white_check_mark: Example screenshot below:\n"
+            "- **Left side:** Available Quests showing **completed quests** in green\n"
+            "- **Right side:** Users in your area showing **Helper names** and their classes"
         ),
-        "image": None,
-    },
-    "rrules": {
-        "text": f"📜 **Runner Rules**\n\nPlease check <#{CHANNEL_IDS['RULES']}> for the complete runner rules and guidelines.",
-        "image": None,
-    },
-    "hrules": {
-        "text": f"📜 **Helper Rules**\n\nPlease check <#{CHANNEL_IDS['RULES']}> for the complete helper rules and guidelines.",
-        "image": None,
-    },
+        "image": "https://cdn.discordapp.com/attachments/1363169040738291872/1408178490662060032/image.png?ex=692ca1ea&is=692b506a&hm=b94d7264eb4552b05d15e9eb37d831cb2a3c0b5141f76f7d26645b10dfd8c567&"
+    }
 }
 
 # ============================================================================

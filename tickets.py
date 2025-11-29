@@ -31,9 +31,9 @@ class TicketButton(discord.ui.Button):
         
         super().__init__(
             label=label,
-            style=discord.ButtonStyle.secondary,  # Black/Gray buttons
+            style=discord.ButtonStyle.secondary,
             custom_id=f"open_ticket::{category}",
-            emoji=config.CUSTOM_EMOJI,  # <:URE:1429522388395233331>
+            emoji=config.CUSTOM_EMOJI,
             row=row
         )
         self.category = category
@@ -57,8 +57,8 @@ class TicketButton(discord.ui.Button):
                 ephemeral=True
             )
         else:
-            # Direct to server selection modal
-            view = ServerSelectView(self.category, selected_bosses=None)
+            # Direct to server selection menu
+            view = ServerSelectView(self.category, selected_bosses=[])
             
             embed = discord.Embed(
                 title=f"🌍 Select Server - {self.category}",
@@ -76,7 +76,7 @@ class TicketButton(discord.ui.Button):
 class BossSelectView(discord.ui.View):
     """View with boss selection dropdown"""
     def __init__(self, category: str):
-        super().__init__(timeout=300)  # 5 minute timeout for selection
+        super().__init__(timeout=300)
         self.category = category
         self.add_item(BossSelectMenu(category))
 
@@ -128,18 +128,18 @@ class BossSelectMenu(discord.ui.Select):
 
 class ServerSelectView(discord.ui.View):
     """View with server selection dropdown"""
-    def __init__(self, category: str, selected_bosses: Optional[List[str]] = None):
+    def __init__(self, category: str, selected_bosses: List[str]):
         super().__init__(timeout=300)
         self.category = category
-        self.selected_bosses = selected_bosses or []
+        self.selected_bosses = selected_bosses
         self.add_item(ServerSelectMenu(category, selected_bosses))
 
 
 class ServerSelectMenu(discord.ui.Select):
     """Dropdown menu for server selection"""
-    def __init__(self, category: str, selected_bosses: Optional[List[str]] = None):
+    def __init__(self, category: str, selected_bosses: List[str]):
         self.category = category
-        self.selected_bosses = selected_bosses or []
+        self.selected_bosses = selected_bosses
         
         # Server options
         servers = ["Swordhaven", "Safiria", "Gravelyn", "Galanoth", "Alteon", "Yorumi"]
@@ -162,16 +162,20 @@ class ServerSelectMenu(discord.ui.Select):
         selected_server = self.values[0]
         
         # Show modal with selected bosses and server
-        modal = TicketModal(self.category, selected_bosses=self.selected_bosses, selected_server=selected_server)
+        modal = TicketModal(
+            category=self.category,
+            selected_bosses=self.selected_bosses,
+            selected_server=selected_server
+        )
         await interaction.response.send_modal(modal)
 
 
 class TicketModal(discord.ui.Modal):
-    """Modal for ticket creation"""
-    def __init__(self, category: str, selected_bosses: Optional[List[str]] = None, selected_server: str = None):
-        super().__init__(title=f"{category} Ticket")
+    """Modal for ticket creation - only in-game name and concerns"""
+    def __init__(self, category: str, selected_bosses: List[str], selected_server: str):
+        super().__init__(title=f"{category}")
         self.category = category
-        self.selected_bosses = selected_bosses or []
+        self.selected_bosses = selected_bosses
         self.selected_server = selected_server
         
         # In-game name input
@@ -196,123 +200,141 @@ class TicketModal(discord.ui.Modal):
     
     async def on_submit(self, interaction: discord.Interaction):
         """Create ticket channel when modal submitted"""
-        await interaction.response.defer(ephemeral=True)
-        
-        guild = interaction.guild
-        category_id = config.CHANNEL_IDS.get("TICKETS_CATEGORY")
-        
-        if not category_id:
-            await interaction.followup.send("❌ Ticket category not configured!", ephemeral=True)
-            return
-        
-        category = guild.get_channel(category_id)
-        if not category:
-            await interaction.followup.send("❌ Ticket category not found!", ephemeral=True)
-            return
-        
-        # Generate random number for ticket (10000-99999)
-        random_number = random.randint(10000, 99999)
-        
-        # Get channel prefix
-        prefix = config.CATEGORY_METADATA.get(self.category, {}).get("prefix", "ticket")
-        
-        # Create channel name: prefix-username
-        username = interaction.user.name.lower().replace(" ", "")[:20]
-        channel_name = f"{prefix}-{username}"
-        
-        # Create ticket channel
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
-        
-        # Add staff/admin permissions
-        admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
-        staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
-        helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
-        
-        if admin_role:
-            overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        if staff_role:
-            overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        if helper_role:
-            overwrites[helper_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        
-        try:
-            channel = await category.create_text_channel(
-                name=channel_name,
-                overwrites=overwrites
-            )
-        except Exception as e:
-            await interaction.followup.send(f"❌ Failed to create ticket: {e}", ephemeral=True)
-            return
-        
-        # Create ticket embed
-        embed = create_ticket_embed(
+        await create_ticket_channel(
+            interaction=interaction,
             category=self.category,
-            requestor_id=interaction.user.id,
-            in_game_name=self.in_game_name.value,
-            concerns=self.concerns.value or "None",
-            helpers=[],
-            random_number=random_number,
             selected_bosses=self.selected_bosses,
-            selected_server=self.selected_server
+            selected_server=self.selected_server,
+            in_game_name=self.in_game_name.value,
+            concerns=self.concerns.value or "None"
         )
-        
-        # Create ticket action buttons
-        view = TicketActionView()
-        
-        # Send ticket message with REQUESTOR + HELPER ROLE PING
-        ping_content = f"{interaction.user.mention}"
-        if helper_role:
-            ping_content += f" <@&{helper_role.id}>"
-        ping_content += " ticket created!"
-        
-        ticket_msg = await channel.send(
-            content=ping_content,
-            embed=embed,
-            view=view
-        )
-        
-        # Save ticket to database
-        bot = interaction.client
-        await bot.db.save_ticket({
-            "channel_id": channel.id,
-            "category": self.category,
-            "requestor_id": interaction.user.id,
-            "helpers": [],
-            "points": config.POINT_VALUES.get(self.category, 0),
-            "random_number": random_number,
-            "proof_submitted": False,
-            "embed_message_id": ticket_msg.id,
-            "in_game_name": self.in_game_name.value,
-            "concerns": self.concerns.value or "None",
-            "selected_bosses": json.dumps(self.selected_bosses),
-            "selected_server": self.selected_server,
-            "is_closed": False
-        })
-        
-        # Generate join commands for requestor
-        requestor_commands = generate_join_commands(
-            self.category, 
-            self.selected_bosses, 
-            random_number, 
-            self.selected_server
-        )
-        
-        # Send room info ONLY to requestor (ephemeral)
-        if requestor_commands:
-            await interaction.followup.send(
-                f"✅ Ticket created: {channel.mention}\n\n**🎮 Your Room Number: `{random_number}`**\n\n**Join Commands:**\n{requestor_commands}",
-                ephemeral=True
-            )
-        else:
-            await interaction.followup.send(
-                f"✅ Ticket created: {channel.mention}\n\n**🎮 Your Room Number: `{random_number}`**",
-                ephemeral=True
-            )
 
+
+async def create_ticket_channel(
+    interaction: discord.Interaction,
+    category: str,
+    selected_bosses: List[str],
+    selected_server: str,
+    in_game_name: str,
+    concerns: str
+):
+    """Create ticket channel with all information"""
+    await interaction.response.defer(ephemeral=True)
+    
+    guild = interaction.guild
+    category_id = config.CHANNEL_IDS.get("TICKETS_CATEGORY")
+    
+    if not category_id:
+        await interaction.followup.send("❌ Ticket category not configured!", ephemeral=True)
+        return
+    
+    category_channel = guild.get_channel(category_id)
+    if not category_channel:
+        await interaction.followup.send("❌ Ticket category not found!", ephemeral=True)
+        return
+    
+    # Generate random number for ticket (10000-99999)
+    random_number = random.randint(10000, 99999)
+    
+    # Get channel prefix
+    prefix = config.CATEGORY_METADATA.get(category, {}).get("prefix", "ticket")
+    
+    # Create channel name: prefix-username
+    username = interaction.user.name.lower().replace(" ", "")[:20]
+    channel_name = f"{prefix}-{username}"
+    
+    # Create ticket channel
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+    }
+    
+    # Add staff/admin permissions
+    admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
+    staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+    helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
+    
+    if admin_role:
+        overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    if staff_role:
+        overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    if helper_role:
+        overwrites[helper_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    
+    try:
+        channel = await category_channel.create_text_channel(
+            name=channel_name,
+            overwrites=overwrites
+        )
+    except Exception as e:
+        await interaction.followup.send(f"❌ Failed to create ticket: {e}", ephemeral=True)
+        return
+    
+    # Create ticket embed
+    embed = create_ticket_embed(
+        category=category,
+        requestor_id=interaction.user.id,
+        in_game_name=in_game_name,
+        concerns=concerns,
+        helpers=[],
+        random_number=random_number,
+        selected_bosses=selected_bosses,
+        selected_server=selected_server
+    )
+    
+    # Create ticket action buttons
+    view = TicketActionView()
+    
+    # Send ticket message with REQUESTOR + HELPER ROLE PING
+    ping_content = f"{interaction.user.mention}"
+    if helper_role:
+        ping_content += f" <@&{helper_role.id}>"
+    ping_content += " ticket created!"
+    
+    ticket_msg = await channel.send(
+        content=ping_content,
+        embed=embed,
+        view=view
+    )
+    
+    # Save ticket to database
+    bot = interaction.client
+    await bot.db.save_ticket({
+        "channel_id": channel.id,
+        "category": category,
+        "requestor_id": interaction.user.id,
+        "helpers": [],
+        "points": config.POINT_VALUES.get(category, 0),
+        "random_number": random_number,
+        "proof_submitted": False,
+        "embed_message_id": ticket_msg.id,
+        "in_game_name": in_game_name,
+        "concerns": concerns,
+        "selected_bosses": json.dumps(selected_bosses),
+        "selected_server": selected_server,
+        "is_closed": False
+    })
+    
+    # Generate join commands for requestor
+    requestor_commands = generate_join_commands(
+        category, 
+        selected_bosses, 
+        random_number, 
+        selected_server
+    )
+    
+    # Send room info ONLY to requestor (ephemeral)
+    if requestor_commands:
+        await interaction.followup.send(
+            f"✅ Ticket created: {channel.mention}\n\n**🎮 Your Room Number: `{random_number}`**\n\n**Join Commands:**\n{requestor_commands}",
+            ephemeral=True
+        )
+    else:
+        await interaction.followup.send(
+            f"✅ Ticket created: {channel.mention}\n\n**🎮 Your Room Number: `{random_number}`**",
+            ephemeral=True
+        )
 
 class TicketActionView(discord.ui.View):
     """Action buttons for ticket (Join, Close, Cancel)"""
@@ -333,44 +355,50 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
             return
         
+        # Check if user is the requestor
         if interaction.user.id == ticket["requestor_id"]:
             await interaction.response.send_message("❌ You cannot join your own ticket.", ephemeral=True)
             return
         
+        # Check if user is already a helper
         if interaction.user.id in ticket["helpers"]:
-            await interaction.response.send_message("❌ You are already helping this ticket.", ephemeral=True)
+            await interaction.response.send_message("❌ You are already a helper in this ticket.", ephemeral=True)
             return
         
-        # === CHECK IF HELPER IS ALREADY IN ANOTHER TICKET ===
+        # Check helper slots
+        max_slots = config.HELPER_SLOTS.get(ticket["category"], 3)
+        if len(ticket["helpers"]) >= max_slots:
+            await interaction.response.send_message(
+                f"❌ This ticket is full ({max_slots}/{max_slots} helpers).",
+                ephemeral=True
+            )
+            return
+        
+        # Check if helper is already in another ticket (ONE TICKET AT A TIME)
         all_tickets = await bot.db.get_all_active_tickets()
-        
         for other_ticket in all_tickets:
-            # Skip current ticket
-            if other_ticket["channel_id"] == interaction.channel_id:
-                continue
-            
-            # Check if user is helping another ticket
-            if interaction.user.id in other_ticket["helpers"]:
-                # Get channel mention
-                other_channel = bot.get_channel(other_ticket["channel_id"])
-                channel_mention = other_channel.mention if other_channel else f"<#{other_ticket['channel_id']}>"
-                
-                await interaction.response.send_message(
-                    f"❌ You are already helping another ticket: {channel_mention}\n\n"
-                    f"Please finish or leave that ticket before joining a new one.",
-                    ephemeral=True
-                )
-                return
+            if other_ticket["channel_id"] != interaction.channel_id:
+                if interaction.user.id in other_ticket["helpers"]:
+                    other_channel = interaction.guild.get_channel(other_ticket["channel_id"])
+                    await interaction.response.send_message(
+                        f"❌ You are already helping in another ticket: {other_channel.mention if other_channel else 'Unknown Channel'}\n"
+                        "You can only help in ONE ticket at a time.",
+                        ephemeral=True
+                    )
+                    return
         
-        # === ORIGINAL JOIN LOGIC ===
-        slots = config.HELPER_SLOTS.get(ticket["category"], 3)
-        if len(ticket["helpers"]) >= slots:
-            await interaction.response.send_message("❌ This ticket already has the maximum number of helpers.", ephemeral=True)
-            return
-        
+        # Add helper
         ticket["helpers"].append(interaction.user.id)
         await bot.db.save_ticket(ticket)
         
+        # Update channel permissions
+        await interaction.channel.set_permissions(
+            interaction.user,
+            view_channel=True,
+            send_messages=True
+        )
+        
+        # Update ticket embed
         selected_bosses = json.loads(ticket.get("selected_bosses", "[]"))
         selected_server = ticket.get("selected_server", "Unknown")
         
@@ -385,26 +413,31 @@ class TicketActionView(discord.ui.View):
             selected_server=selected_server
         )
         
-        await interaction.message.edit(embed=embed)
+        # Update the ticket message
+        try:
+            msg = await interaction.channel.fetch_message(ticket["embed_message_id"])
+            await msg.edit(embed=embed)
+        except:
+            pass
         
-        join_commands = generate_join_commands(ticket["category"], selected_bosses, ticket["random_number"], selected_server)
+        # Send join commands to helper
+        helper_commands = generate_join_commands(
+            ticket["category"],
+            selected_bosses,
+            ticket["random_number"],
+            selected_server
+        )
         
-        if join_commands:
-            await interaction.response.send_message(
-                f"✅ You joined as helper!\n\n**🎮 Join Commands:**\n{join_commands}",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                f"✅ You joined as helper!",
-                ephemeral=True
-            )
-        
-        await interaction.channel.send(f"✅ {interaction.user.mention} joined as helper!")
+        await interaction.response.send_message(
+            f"✅ {interaction.user.mention} joined the ticket!\n\n"
+            f"**🎮 Room Number: `{ticket['random_number']}`**\n\n"
+            f"**Join Commands:**\n{helper_commands if helper_commands else 'No commands available'}",
+            ephemeral=False
+        )
     
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="close_ticket")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Close ticket with rewards - STAFF/ADMIN ONLY"""
+        """Close ticket and award points"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -416,140 +449,130 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
             return
         
+        # Check permissions (staff/admin or requestor)
         member = interaction.user
         is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        is_requestor = interaction.user.id == ticket["requestor_id"]
         
-        if not is_staff:
-            await interaction.response.send_message("❌ Only staff or admins can close tickets.", ephemeral=True)
+        if not (is_staff or is_requestor):
+            await interaction.response.send_message(
+                "❌ Only staff or the ticket creator can close tickets.",
+                ephemeral=True
+            )
             return
         
-        await interaction.response.defer()
-        
-        guild = interaction.guild
-        admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
-        staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
-        helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
-        
-        # === STEP 1: REMOVE PERMISSIONS IMMEDIATELY ===
-        new_overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
-        
-        if admin_role:
-            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        if staff_role:
-            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        
-        # Block requestor
-        requestor = guild.get_member(ticket["requestor_id"])
-        if requestor:
-            new_overwrites[requestor] = discord.PermissionOverwrite(
-                view_channel=False,
-                send_messages=False,
-                read_message_history=False
+        # Check if proof was submitted
+        if not ticket.get("proof_submitted", False):
+            await interaction.response.send_message(
+                "❌ Please submit proof before closing the ticket.\n"
+                "Upload a screenshot showing completed quests and helper names, then click **Submit Proof**.",
+                ephemeral=True
             )
+            return
         
-        # Block helpers (except staff/admin)
+        # Award points to helpers
+        points_per_helper = ticket["points"]
+        total_awarded = 0
+        
         for helper_id in ticket["helpers"]:
-            helper = guild.get_member(helper_id)
-            if helper:
-                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles)
-                if not is_helper_staff:
-                    new_overwrites[helper] = discord.PermissionOverwrite(
-                        view_channel=False,
-                        send_messages=False,
-                        read_message_history=False
-                    )
+            await bot.db.add_points(helper_id, points_per_helper)
+            total_awarded += points_per_helper
         
-        # Block Helper ROLE
-        if helper_role:
-            new_overwrites[helper_role] = discord.PermissionOverwrite(
-                view_channel=False,
-                send_messages=False,
-                read_message_history=False
-            )
+        # Mark ticket as closed
+        ticket["is_closed"] = True
+        await bot.db.save_ticket(ticket)
         
-        await interaction.channel.edit(overwrites=new_overwrites)
+        # Save to history
+        await bot.db.save_ticket_history({
+            "channel_id": ticket["channel_id"],
+            "category": ticket["category"],
+            "requestor_id": ticket["requestor_id"],
+            "helpers": json.dumps(ticket["helpers"]),
+            "points_per_helper": points_per_helper,
+            "total_points_awarded": total_awarded,
+            "closed_by": interaction.user.id
+        })
         
-        # === STEP 2: SEND CLOSED EMBED ===
-        helpers_text = ", ".join([f"<@{h}>" for h in ticket["helpers"]]) if ticket["helpers"] else "None"
-        points_per_helper = ticket.get("points", 0)
-        total_awarded = points_per_helper * len(ticket["helpers"])
+        # Create transcript
+        transcript = await generate_transcript(interaction.channel)
         
-        closed_embed = discord.Embed(
-            title=f"🔒 {ticket['category']} (Closed)",
-            color=config.COLORS["SUCCESS"],
-            timestamp=discord.utils.utcnow()
-        )
-        closed_embed.add_field(name="Requestor", value=f"<@{ticket['requestor_id']}>", inline=False)
-        closed_embed.add_field(name="Helpers", value=helpers_text, inline=False)
-        closed_embed.add_field(name="Points per Helper", value=f"**{points_per_helper}**", inline=True)
-        closed_embed.add_field(name="Total Points Awarded", value=f"**{total_awarded}**", inline=True)
-        closed_embed.set_footer(text=f"Closed by {interaction.user}")
-        
-        await interaction.channel.send(embed=closed_embed)
-        
-        # === STEP 3: SEND DELETE BUTTON (BEFORE DATABASE) ===
-        delete_embed = discord.Embed(
-            title="🗑️ Delete Channel?",
-            description=(
-                "This ticket has been closed.\n\n"
-                "Click the button below to delete this channel.\n"
-                "Only staff can delete the channel."
-            ),
-            color=config.COLORS["DANGER"]
-        )
-        
-        delete_view = DeleteChannelView()
-        await interaction.followup.send(embed=delete_embed, view=delete_view, ephemeral=False)
-        
-        # === STEP 4: DATABASE OPERATIONS (LAST, WITH ERROR HANDLING) ===
-        try:
-            # Mark as closed
-            ticket["is_closed"] = True
-            await bot.db.save_ticket(ticket)
-            
-            # Award points
-            for helper_id in ticket["helpers"]:
-                try:
-                    await bot.db.add_points(helper_id, points_per_helper)
-                except Exception as e:
-                    print(f"⚠️ Failed to award points to {helper_id}: {e}")
-            
-            # Generate transcript
-            try:
-                await generate_transcript(interaction.channel, bot, ticket)
-            except Exception as e:
-                print(f"⚠️ Transcript generation failed: {e}")
-            
-            # Save history
-            try:
-                await bot.db.save_ticket_history({
-                    "channel_id": ticket["channel_id"],
-                    "category": ticket["category"],
-                    "requestor_id": ticket["requestor_id"],
-                    "helpers": json.dumps(ticket["helpers"]),
-                    "points_per_helper": points_per_helper,
-                    "total_points_awarded": total_awarded,
-                    "closed_by": interaction.user.id
-                })
-            except Exception as e:
-                print(f"⚠️ History save failed: {e}")
-            
-            # Delete from active
-            try:
-                await bot.db.delete_ticket(ticket["channel_id"])
-            except Exception as e:
-                print(f"⚠️ Ticket deletion failed: {e}")
+        # Send transcript to transcript channel
+        transcript_channel_id = config.CHANNEL_IDS.get("TRANSCRIPT")
+        if transcript_channel_id:
+            transcript_channel = interaction.guild.get_channel(transcript_channel_id)
+            if transcript_channel:
+                # Create summary embed
+                summary_embed = discord.Embed(
+                    title=f"📋 Ticket Closed - {ticket['category']}",
+                    color=config.COLORS["SUCCESS"],
+                    timestamp=discord.utils.utcnow()
+                )
+                summary_embed.add_field(name="Requestor", value=f"<@{ticket['requestor_id']}>", inline=True)
+                summary_embed.add_field(name="Helpers", value=f"{len(ticket['helpers'])}", inline=True)
+                summary_embed.add_field(name="Points Awarded", value=f"{total_awarded:,}", inline=True)
                 
-        except Exception as e:
-            print(f"⚠️ Database error during close (ticket still closed): {e}")
-            traceback.print_exc()
+                helpers_list = "\n".join([f"<@{hid}>" for hid in ticket["helpers"]]) if ticket["helpers"] else "None"
+                summary_embed.add_field(name="Helper List", value=helpers_list, inline=False)
+                
+                summary_embed.set_footer(text=f"Closed by {interaction.user}")
+                
+                # Send transcript file
+                file = discord.File(io.BytesIO(transcript.encode()), filename=f"ticket-{ticket['channel_id']}.txt")
+                await transcript_channel.send(embed=summary_embed, file=file)
+        
+        # Notify in ticket channel
+        close_embed = discord.Embed(
+            title="✅ Ticket Closed",
+            description=f"**Points Awarded:** {total_awarded:,} total ({points_per_helper:,} per helper)\n"
+                       f"**Helpers:** {len(ticket['helpers'])}\n\n"
+                       "This channel will be deleted in 10 seconds...",
+            color=config.COLORS["SUCCESS"]
+        )
+        close_embed.set_footer(text=f"Closed by {interaction.user}")
+        
+        await interaction.response.send_message(embed=close_embed)
+        
+        # Delete channel after 10 seconds
+        await asyncio.sleep(10)
+        try:
+            await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
+        except:
+            pass
+    
+    @discord.ui.button(label="Submit Proof", style=discord.ButtonStyle.primary, emoji="📸", custom_id="submit_proof")
+    async def proof_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Mark proof as submitted"""
+        bot = interaction.client
+        ticket = await bot.db.get_ticket(interaction.channel_id)
+        
+        if not ticket:
+            await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
+            return
+        
+        if ticket.get("is_closed", False):
+            await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
+            return
+        
+        # Only requestor can submit proof
+        if interaction.user.id != ticket["requestor_id"]:
+            await interaction.response.send_message(
+                "❌ Only the ticket creator can submit proof.",
+                ephemeral=True
+            )
+            return
+        
+        # Mark proof as submitted
+        ticket["proof_submitted"] = True
+        await bot.db.save_ticket(ticket)
+        
+        await interaction.response.send_message(
+            "✅ Proof submitted! You can now close the ticket.",
+            ephemeral=False
+        )
     
     @discord.ui.button(label="Cancel Ticket", style=discord.ButtonStyle.secondary, emoji="❌", custom_id="cancel_ticket")
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Cancel ticket WITHOUT rewards - Requestor/Staff/Admin"""
+        """Cancel ticket without awarding points"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -557,142 +580,52 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
             return
         
-        if ticket.get("is_closed", False):
-            await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
-            return
-        
+        # Check permissions (staff/admin or requestor)
         member = interaction.user
-        is_requestor = interaction.user.id == ticket["requestor_id"]
         is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        is_requestor = interaction.user.id == ticket["requestor_id"]
         
-        if not (is_requestor or is_staff):
-            await interaction.response.send_message("❌ Only the requestor, staff, or admins can cancel tickets.", ephemeral=True)
+        if not (is_staff or is_requestor):
+            await interaction.response.send_message(
+                "❌ Only staff or the ticket creator can cancel tickets.",
+                ephemeral=True
+            )
             return
         
-        await interaction.response.defer()
+        # Mark as closed without points
+        ticket["is_closed"] = True
+        await bot.db.save_ticket(ticket)
         
-        guild = interaction.guild
-        admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
-        staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
-        helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
-        
-        # === REMOVE PERMISSIONS ===
-        new_overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
-        
-        if admin_role:
-            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        if staff_role:
-            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        
-        # Block requestor
-        requestor = guild.get_member(ticket["requestor_id"])
-        if requestor:
-            new_overwrites[requestor] = discord.PermissionOverwrite(
-                view_channel=False,
-                send_messages=False,
-                read_message_history=False
-            )
-        
-        # Block helpers
-        for helper_id in ticket["helpers"]:
-            helper = guild.get_member(helper_id)
-            if helper:
-                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles)
-                if not is_helper_staff:
-                    new_overwrites[helper] = discord.PermissionOverwrite(
-                        view_channel=False,
-                        send_messages=False,
-                        read_message_history=False
-                    )
-        
-        # Block Helper ROLE
-        if helper_role:
-            new_overwrites[helper_role] = discord.PermissionOverwrite(
-                view_channel=False,
-                send_messages=False,
-                read_message_history=False
-            )
-        
-        await interaction.channel.edit(overwrites=new_overwrites)
-        
-        # === SEND CANCELLED EMBED (NO POINTS) ===
-        helpers_text = ", ".join([f"<@{h}>" for h in ticket["helpers"]]) if ticket["helpers"] else "None"
-        
-        cancelled_embed = discord.Embed(
-            title=f"❌ {ticket['category']} (Cancelled)",
-            description="**This ticket was cancelled. No points were awarded.**",
-            color=config.COLORS["DANGER"],
-            timestamp=discord.utils.utcnow()
+        cancel_embed = discord.Embed(
+            title="❌ Ticket Cancelled",
+            description="This ticket was cancelled. No points were awarded.\n\n"
+                       "This channel will be deleted in 5 seconds...",
+            color=config.COLORS["WARNING"]
         )
-        cancelled_embed.add_field(name="Requestor", value=f"<@{ticket['requestor_id']}>", inline=False)
-        cancelled_embed.add_field(name="Helpers", value=helpers_text, inline=False)
-        cancelled_embed.add_field(name="Points Awarded", value="**0** (Cancelled)", inline=True)
-        cancelled_embed.set_footer(text=f"Cancelled by {interaction.user}")
+        cancel_embed.set_footer(text=f"Cancelled by {interaction.user}")
         
-        await interaction.channel.send(embed=cancelled_embed)
+        await interaction.response.send_message(embed=cancel_embed)
         
-        # === SEND DELETE BUTTON ===
-        delete_embed = discord.Embed(
-            title="🗑️ Delete Channel?",
-            description=(
-                "This ticket has been cancelled.\n\n"
-                "Click the button below to delete this channel.\n"
-                "Only staff can delete the channel."
-            ),
-            color=config.COLORS["DANGER"]
-        )
-        
-        delete_view = DeleteChannelView()
-        await interaction.followup.send(embed=delete_embed, view=delete_view, ephemeral=False)
-        
-        # === DATABASE CLEANUP (NO POINTS, NO HISTORY, BUT GENERATE TRANSCRIPT) ===
+        # Delete channel after 5 seconds
+        await asyncio.sleep(5)
         try:
-            ticket["is_closed"] = True
-            await bot.db.save_ticket(ticket)
-            
-            # Generate transcript for cancelled tickets too
-            try:
-                await generate_transcript(interaction.channel, bot, ticket, is_cancelled=True)
-            except Exception as e:
-                print(f"⚠️ Transcript generation failed: {e}")
-            
-            # Delete from active (NO history saved for cancelled tickets)
-            try:
-                await bot.db.delete_ticket(ticket["channel_id"])
-            except Exception as e:
-                print(f"⚠️ Ticket deletion failed: {e}")
-                
-        except Exception as e:
-            print(f"⚠️ Database error during cancel: {e}")
-            traceback.print_exc()
+            await interaction.channel.delete(reason=f"Ticket cancelled by {interaction.user}")
+        except:
+            pass
 
 
 class DeleteChannelView(discord.ui.View):
-    """View with delete channel button"""
+    """Simple delete channel button"""
     def __init__(self):
         super().__init__(timeout=None)
     
     @discord.ui.button(label="Delete Channel", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="delete_channel")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Delete the channel - STAFF/ADMIN ONLY"""
-        member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
-        
-        if not is_staff:
-            await interaction.response.send_message("❌ Only staff or admins can delete the channel.", ephemeral=True)
-            return
-        
-        await interaction.response.send_message(
-            f"🗑️ Channel will be deleted in 5 seconds...",
-            ephemeral=False
-        )
-        
-        await asyncio.sleep(5)
+        """Delete the channel"""
+        await interaction.response.send_message("Deleting channel...", ephemeral=True)
+        await asyncio.sleep(2)
         try:
-            await interaction.channel.delete(reason=f"Ticket closed and deleted by {interaction.user}")
+            await interaction.channel.delete(reason=f"Deleted by {interaction.user}")
         except:
             pass
 
@@ -704,47 +637,50 @@ def create_ticket_embed(
     concerns: str,
     helpers: List[int],
     random_number: int,
-    selected_bosses: Optional[List[str]] = None,
-    selected_server: str = "Unknown"
+    selected_bosses: List[str],
+    selected_server: str
 ) -> discord.Embed:
-    """Create ticket information embed"""
+    """Create ticket embed"""
     embed = discord.Embed(
         title=f"🎫 {category}",
-        description=config.CATEGORY_METADATA.get(category, {}).get("description", "Ticket"),
         color=config.COLORS["PRIMARY"],
         timestamp=discord.utils.utcnow()
     )
     
-    embed.add_field(name="👤 Requestor", value=f"<@{requestor_id}>", inline=True)
-    embed.add_field(name="🎮 In-game Name", value=in_game_name, inline=True)
+    # Requestor info
+    embed.add_field(name="📝 Requestor", value=f"<@{requestor_id}>", inline=True)
+    embed.add_field(name="🎮 In-Game Name", value=in_game_name, inline=True)
     embed.add_field(name="🌍 Server", value=selected_server, inline=True)
     
+    # Boss selection (if applicable)
     if selected_bosses:
-        embed.add_field(
-            name="📋 Selected Bosses",
-            value="\n".join([f"⚔️ {boss}" for boss in selected_bosses]),
-            inline=False
-        )
+        bosses_text = "\n".join([f"• {boss}" for boss in selected_bosses])
+        embed.add_field(name="⚔️ Selected Bosses", value=bosses_text, inline=False)
     
-    slots = config.HELPER_SLOTS.get(category, 3)
-    helpers_text = ", ".join([f"<@{h}>" for h in helpers]) if helpers else "Waiting for helpers..."
+    # Helpers
+    max_slots = config.HELPER_SLOTS.get(category, 3)
+    helpers_text = "\n".join([f"<@{hid}>" for hid in helpers]) if helpers else "*No helpers yet*"
     embed.add_field(
-        name=f"👥 Helpers ({len(helpers)}/{slots})",
+        name=f"✅ Helpers ({len(helpers)}/{max_slots})",
         value=helpers_text,
         inline=False
     )
     
-    points = config.POINT_VALUES.get(category, 0)
-    embed.add_field(name="💰 Points per Helper", value=f"**{points}**", inline=True)
+    # Concerns
+    if concerns and concerns != "None":
+        embed.add_field(name="💬 Concerns", value=concerns, inline=False)
     
-    if concerns != "None":
-        embed.add_field(name="📝 Concerns", value=concerns, inline=False)
+    # Points
+    points = config.POINT_VALUES.get(category, 0)
+    embed.add_field(name="💰 Points", value=f"{points:,} per helper", inline=True)
+    
+    embed.set_footer(text=f"Room: {random_number}")
     
     return embed
 
 
 def generate_join_commands(category: str, selected_bosses: List[str], room_number: int, server: str) -> str:
-    """Generate /join commands based on selected bosses"""
+    """Generate join commands for helpers"""
     commands = []
     
     if category == "Daily 4-Man Express":
@@ -753,15 +689,10 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
     
     elif category == "Daily 7-Man Express":
         for boss in selected_bosses:
-            if boss in config.BOSS_7MAN_COMMANDS:
-                boss_commands = config.BOSS_7MAN_COMMANDS[boss]
-                if len(boss_commands) == 1:
-                    commands.append(f"`/join {boss_commands[0]}-{room_number}`")
-                else:
-                    multi = " **OR** ".join([f"`/join {cmd}-{room_number}`" for cmd in boss_commands])
-                    commands.append(f"**{boss}:** {multi}")
-            else:
-                commands.append(f"`/join {boss}-{room_number}`")
+            # Check if boss has multiple commands
+            boss_commands = config.BOSS_7MAN_COMMANDS.get(boss, [boss])
+            for cmd in boss_commands:
+                commands.append(f"`/join {cmd}-{room_number}`")
     
     elif category == "Weekly Ultra Express":
         for boss in selected_bosses:
@@ -774,7 +705,8 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
         commands.append(f"`/join UltraGramiel-{room_number}`")
     
     elif category == "GrimChallenge Express":
-        commands.append(f"`/join GrimChallenge-{room_number}`")
+        commands.append(f"`/join Mechabinky-{room_number}`")
+        commands.append(f"`/join Raxborg-{room_number}`")
     
     elif category == "Daily Temple Express":
         commands.append(f"`/join TempleShrine-{room_number}`")
@@ -782,71 +714,41 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
     return "\n".join(commands) if commands else ""
 
 
-async def generate_transcript(channel: discord.TextChannel, bot, ticket: dict, is_cancelled: bool = False):
-    """Generate transcript and save to transcript channel"""
-    transcript_channel_id = config.CHANNEL_IDS.get("TRANSCRIPT")
+async def generate_transcript(channel: discord.TextChannel) -> str:
+    """Generate text transcript of ticket channel"""
+    transcript = f"Ticket Transcript - {channel.name}\n"
+    transcript += f"Generated: {discord.utils.utcnow()}\n"
+    transcript += "=" * 50 + "\n\n"
     
-    if not transcript_channel_id:
-        return
-    
-    transcript_channel = bot.get_channel(transcript_channel_id)
-    if not transcript_channel:
-        return
-    
-    messages = []
-    async for msg in channel.history(limit=500, oldest_first=True):
-        messages.append(msg)
-    
-    status = "CANCELLED" if is_cancelled else "CLOSED"
-    
-    transcript_lines = [
-        f"=== TRANSCRIPT FOR {channel.name.upper()} ===",
-        f"Status: {status}",
-        f"Category: {ticket['category']}",
-        f"Requestor: {ticket['requestor_id']}",
-        f"Room Number: {ticket['random_number']}",
-        f"Created: {channel.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}",
-        "=" * 50,
-        ""
-    ]
-    
-    for msg in messages:
-        timestamp = msg.created_at.strftime('%Y-%m-%d %H:%M:%S')
-        author = f"{msg.author.name}#{msg.author.discriminator}" if msg.author.discriminator != "0" else msg.author.name
-        content = msg.content or "[Embed/Attachment]"
+    try:
+        messages = []
+        async for message in channel.history(limit=500, oldest_first=True):
+            messages.append(message)
         
-        transcript_lines.append(f"[{timestamp}] {author}: {content}")
-        
-        if msg.embeds:
-            for embed in msg.embeds:
-                if embed.title:
-                    transcript_lines.append(f"  └─ Embed: {embed.title}")
+        for msg in messages:
+            timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            transcript += f"[{timestamp}] {msg.author.name}: {msg.content}\n"
+            
+            # Add attachments
+            if msg.attachments:
+                for attachment in msg.attachments:
+                    transcript += f"  📎 Attachment: {attachment.url}\n"
+            
+            transcript += "\n"
     
-    transcript_text = "\n".join(transcript_lines)
+    except Exception as e:
+        transcript += f"Error generating transcript: {e}\n"
     
-    file = discord.File(
-        io.BytesIO(transcript_text.encode('utf-8')),
-        filename=f"transcript-{channel.name}-{ticket['random_number']}.txt"
-    )
-    
-    title_status = "Cancelled" if is_cancelled else "Closed"
-    
-    embed = discord.Embed(
-        title=f"📄 Transcript: {channel.name} ({title_status})",
-        description=f"**Category:** {ticket['category']}\n**Room Number:** {ticket['random_number']}\n**Status:** {title_status}",
-        color=config.COLORS["DANGER"] if is_cancelled else config.COLORS["PRIMARY"],
-        timestamp=discord.utils.utcnow()
-    )
-    
-    await transcript_channel.send(embed=embed, file=file)
+    return transcript
 
 
 async def setup_tickets(bot):
     """Setup ticket commands"""
     
-    @bot.tree.command(name="panel", description="Post the ticket panel (Staff only)")
+    @bot.tree.command(name="panel", description="Post the ticket panel (Admin/Staff only)")
     async def panel(interaction: discord.Interaction):
         """Post ticket panel"""
+        # Check permissions
         member = interaction.user
         is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
         
@@ -854,57 +756,61 @@ async def setup_tickets(bot):
             await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
             return
         
-        ticket_panel_channel_id = config.CHANNEL_IDS.get("TICKET_PANEL")
-        
+        # Create panel embed
         embed = discord.Embed(
-            title="### 🎮 IN-GAME ASSISTANCE 🎮",
+            title="🎫 Helper Ticket Panel",
             description=(
-                "## CHOOSE YOUR TICKET TYPE🚂 💨\n"
-                "Pick the ticket type that fits your request📜\n"
-                f"* <#{ticket_panel_channel_id}>\n"
-                "------------------------------------------------------------\n"
-                "**UltraSpeaker Express**\n"
-                "- The First Speaker\n\n"
-                "**Ultra Gramiel Express**\n"
-                "- Ultra Gramiel\n\n"
-                "**Daily 4-Man Express**\n"
-                "- Daily 4-Man Ultra Bosses\n\n"
-                "**Daily 7-Man Express**\n"
-                "- Daily 7-Man Ultra Bosses\n\n"
-                "**Weekly Ultra Express**\n"
-                "- Weekly Ultra Bosses (excluding speaker, grim and gramiel)\n\n"
-                "**GrimChallenge Express**\n"
-                "- Mechabinky & Raxborg 2.0\n\n"
-                "**Daily Temple Express**\n"
-                "- Daily TempleShrine\n"
-                "-----------------------------------------------------------\n"
-                "### How it works📢\n"
-                "- ✅ Select a \"ticket type\"\n"
-                "- 📝 Fill out the form\n"
-                "- 💁 Helpers join\n"
-                "- 🎉 Get help in your private ticket"
+                "Click a button below to request help with bosses!\n\n"
+                "**Rules:**\n"
+                "• Use `/rrules` to view requestor rules\n"
+                "• Use `/hrules` to view helper rules\n"
+                "• Use `/proof` to see proof requirements\n\n"
+                "**Point Values:**\n"
             ),
             color=config.COLORS["PRIMARY"]
         )
+        
+        # Add point values
+        for cat in config.CATEGORIES:
+            points = config.POINT_VALUES.get(cat, 0)
+            embed.description += f"• **{cat.replace(' Express', '')}**: {points} pts\n"
         
         view = TicketView()
         await interaction.channel.send(embed=embed, view=view)
         await interaction.response.send_message("✅ Ticket panel posted!", ephemeral=True)
     
-    @bot.tree.command(name="proof", description="Show proof submission guidelines")
-    async def proof(interaction: discord.Interaction):
-        """Show proof guidelines"""
-        cmd_data = config.HARDCODED_COMMANDS.get("proof", {})
-        await interaction.response.send_message(cmd_data.get("text", "No info available."))
+    @bot.tree.command(name="rrules", description="Show requestor rules")
+    async def rrules(interaction: discord.Interaction):
+        """Show requestor rules"""
+        text = config.HARDCODED_COMMANDS["rrules"]["text"]
+        embed = discord.Embed(
+            description=text,
+            color=config.COLORS["PRIMARY"]
+        )
+        await interaction.response.send_message(embed=embed)
     
     @bot.tree.command(name="hrules", description="Show helper rules")
     async def hrules(interaction: discord.Interaction):
         """Show helper rules"""
-        cmd_data = config.HARDCODED_COMMANDS.get("hrules", {})
-        await interaction.response.send_message(cmd_data.get("text", "No info available."))
+        text = config.HARDCODED_COMMANDS["hrules"]["text"]
+        embed = discord.Embed(
+            description=text,
+            color=config.COLORS["PRIMARY"]
+        )
+        await interaction.response.send_message(embed=embed)
     
-    @bot.tree.command(name="rrules", description="Show runner rules")
-    async def rrules(interaction: discord.Interaction):
-        """Show runner rules"""
-        cmd_data = config.HARDCODED_COMMANDS.get("rrules", {})
-        await interaction.response.send_message(cmd_data.get("text", "No info available."))
+    @bot.tree.command(name="proof", description="Show proof requirements")
+    async def proof(interaction: discord.Interaction):
+        """Show proof requirements"""
+        text = config.HARDCODED_COMMANDS["proof"]["text"]
+        image = config.HARDCODED_COMMANDS["proof"].get("image")
+        
+        embed = discord.Embed(
+            description=text,
+            color=config.COLORS["PRIMARY"]
+        )
+        
+        if image:
+            embed.set_image(url=image)
+        
+        await interaction.response.send_message(embed=embed)

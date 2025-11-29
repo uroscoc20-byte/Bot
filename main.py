@@ -53,6 +53,38 @@ async def on_ready():
     await bot.db.init()
     print("✅ Database initialized")
     
+    # Import and register persistent views (CRITICAL - FIXES BUTTON FAILURES)
+    from tickets import TicketView, TicketActionView, DeleteChannelView
+    from verification import VerificationView, VerificationActionView
+    from leaderboard import LeaderboardView
+    
+    bot.add_view(TicketView())
+    bot.add_view(TicketActionView())
+    bot.add_view(DeleteChannelView())
+    bot.add_view(VerificationView())
+    bot.add_view(VerificationActionView())
+    bot.add_view(LeaderboardView())
+    
+    print("✅ Persistent views registered - Buttons will never fail!")
+    
+    # Setup all modules
+    from tickets import setup_tickets
+    from verification import setup_verification
+    from leaderboard import setup_leaderboard
+    from admin import setup_admin
+    
+    await setup_tickets(bot)
+    print("✅ Ticket system loaded")
+    
+    await setup_verification(bot)
+    print("✅ Verification system loaded")
+    
+    await setup_leaderboard(bot)
+    print("✅ Leaderboard system loaded")
+    
+    await setup_admin(bot)
+    print("✅ Admin system loaded")
+    
     # Sync slash commands
     try:
         synced = await bot.tree.sync()
@@ -64,7 +96,7 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="tickets | /info"
+            name="tickets | /panel"
         )
     )
     print("✅ Bot is ready!")
@@ -87,40 +119,9 @@ async def on_command_error(ctx, error):
         print(f"❌ Command error: {error}")
 
 
-async def setup_modules():
-    """Setup all module commands and views"""
-    # Import module setup functions
-    from tickets import setup_tickets, TicketView, TicketActionView
-    from verification import setup_verification, VerificationView, VerificationActionView
-    from leaderboard import setup_leaderboard, LeaderboardView
-    from admin import setup_admin
-    
-    # Register persistent views
-    bot.add_view(TicketView())
-    bot.add_view(TicketActionView())
-    bot.add_view(VerificationView())
-    bot.add_view(VerificationActionView())
-    bot.add_view(LeaderboardView())
-    
-    # Setup commands
-    await setup_tickets(bot)
-    await setup_verification(bot)
-    await setup_leaderboard(bot)
-    await setup_admin(bot)
-    
-    print("✅ All modules loaded successfully!")
-
-
-async def main():
-    """Main entry point"""
-    async with bot:
-        await setup_modules()
-        await bot.start(TOKEN)
-
-
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        bot.run(TOKEN)
     except KeyboardInterrupt:
         print("\n👋 Bot shutting down...")
     except Exception as e:
