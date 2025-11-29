@@ -9,6 +9,7 @@ from typing import Optional, List
 import json
 import io
 import asyncio
+import traceback
 import config
 
 
@@ -366,7 +367,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="close_ticket")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Close and reward ticket - STAFF/ADMIN ONLY - ULTIMATE DEBUG VERSION"""
+        """Close ticket - FIXED ORDER: Permissions → Delete Button → Database"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -387,17 +388,57 @@ class TicketActionView(discord.ui.View):
         
         await interaction.response.defer()
         
-        ticket["is_closed"] = True
-        await bot.db.save_ticket(ticket)
+        guild = interaction.guild
+        admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
+        staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
         
-        points_per_helper = ticket["points"]
-        total_awarded = 0
+        # === STEP 1: REMOVE PERMISSIONS IMMEDIATELY ===
+        new_overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        }
         
+        if admin_role:
+            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        if staff_role:
+            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        
+        # Block requestor
+        requestor = guild.get_member(ticket["requestor_id"])
+        if requestor:
+            new_overwrites[requestor] = discord.PermissionOverwrite(
+                view_channel=False,
+                send_messages=False,
+                read_message_history=False
+            )
+        
+        # Block helpers (except staff/admin)
         for helper_id in ticket["helpers"]:
-            await bot.db.add_points(helper_id, points_per_helper)
-            total_awarded += points_per_helper
+            helper = guild.get_member(helper_id)
+            if helper:
+                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles)
+                if not is_helper_staff:
+                    new_overwrites[helper] = discord.PermissionOverwrite(
+                        view_channel=False,
+                        send_messages=False,
+                        read_message_history=False
+                    )
         
+        # Block Helper ROLE
+        if helper_role:
+            new_overwrites[helper_role] = discord.PermissionOverwrite(
+                view_channel=False,
+                send_messages=False,
+                read_message_history=False
+            )
+        
+        await interaction.channel.edit(overwrites=new_overwrites)
+        
+        # === STEP 2: SEND CLOSED EMBED ===
         helpers_text = ", ".join([f"<@{h}>" for h in ticket["helpers"]]) if ticket["helpers"] else "None"
+        points_per_helper = ticket.get("points", 0)
+        total_awarded = points_per_helper * len(ticket["helpers"])
         
         closed_embed = discord.Embed(
             title=f"🔒 {ticket['category']} (Closed)",
@@ -412,146 +453,7 @@ class TicketActionView(discord.ui.View):
         
         await interaction.channel.send(embed=closed_embed)
         
-        await generate_transcript(interaction.channel, bot, ticket)
-        
-        await bot.db.save_ticket_history({
-            "channel_id": ticket["channel_id"],
-            "category": ticket["category"],
-            "requestor_id": ticket["requestor_id"],
-            "helpers": json.dumps(ticket["helpers"]),
-            "points_per_helper": points_per_helper,
-            "total_points_awarded": total_awarded,
-            "closed_by": interaction.user.id
-        })
-        
-        await bot.db.delete_ticket(ticket["channel_id"])
-        
-        # ===== ULTIMATE DEBUG MODE =====
-        guild = interaction.guild
-        admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
-        staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
-        helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
-        
-        print("\n" + "="*60)
-        print(f"🔒 CLOSING TICKET: {interaction.channel.name}")
-        print("="*60)
-        
-        print(f"\n📋 TICKET INFO:")
-        print(f"   Requestor ID: {ticket['requestor_id']}")
-        print(f"   Helper IDs: {ticket['helpers']}")
-        print(f"   Category: {ticket['category']}")
-        
-        print(f"\n🎭 ROLE INFO:")
-        print(f"   Admin Role: {admin_role.name if admin_role else 'NOT FOUND'} (ID: {config.ROLE_IDS.get('ADMIN')})")
-        print(f"   Staff Role: {staff_role.name if staff_role else 'NOT FOUND'} (ID: {config.ROLE_IDS.get('STAFF')})")
-        print(f"   Helper Role: {helper_role.name if helper_role else 'NOT FOUND'} (ID: {config.ROLE_IDS.get('HELPER')})")
-        
-        print(f"\n📊 PERMISSIONS BEFORE CLOSE:")
-        for target, overwrite in interaction.channel.overwrites.items():
-            if isinstance(target, discord.Role):
-                print(f"   Role: {target.name} → {overwrite}")
-            elif isinstance(target, discord.Member):
-                print(f"   User: {target.name} → {overwrite}")
-            else:
-                print(f"   Other: {target} → {overwrite}")
-        
-        # Build new overwrites - ONLY staff can see
-        new_overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
-        
-        if admin_role:
-            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-            print(f"\n✅ Adding Admin role to new overwrites")
-        
-        if staff_role:
-            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-            print(f"✅ Adding Staff role to new overwrites")
-        
-        # EXPLICITLY BLOCK REQUESTOR
-        requestor = guild.get_member(ticket["requestor_id"])
-        if requestor:
-            new_overwrites[requestor] = discord.PermissionOverwrite(
-                view_channel=False,
-                read_messages=False,
-                send_messages=False,
-                read_message_history=False
-            )
-            print(f"❌ BLOCKING Requestor: {requestor.name}")
-        else:
-            print(f"⚠️ Requestor NOT FOUND (ID: {ticket['requestor_id']})")
-        
-        # EXPLICITLY BLOCK ALL HELPERS (individual users)
-        for helper_id in ticket["helpers"]:
-            helper = guild.get_member(helper_id)
-            if helper:
-                # Check if this helper is staff/admin
-                is_helper_staff = False
-                if admin_role and admin_role in helper.roles:
-                    is_helper_staff = True
-                    print(f"⏭️ Skipping {helper.name} (has Admin role)")
-                if staff_role and staff_role in helper.roles:
-                    is_helper_staff = True
-                    print(f"⏭️ Skipping {helper.name} (has Staff role)")
-                
-                # Only block if not staff/admin
-                if not is_helper_staff:
-                    new_overwrites[helper] = discord.PermissionOverwrite(
-                        view_channel=False,
-                        read_messages=False,
-                        send_messages=False,
-                        read_message_history=False
-                    )
-                    print(f"❌ BLOCKING Helper: {helper.name}")
-            else:
-                print(f"⚠️ Helper NOT FOUND (ID: {helper_id})")
-        
-        # EXPLICITLY BLOCK HELPER ROLE
-        if helper_role:
-            new_overwrites[helper_role] = discord.PermissionOverwrite(
-                view_channel=False,
-                read_messages=False,
-                send_messages=False,
-                read_message_history=False
-            )
-            print(f"❌ BLOCKING Helper Role: {helper_role.name}")
-        else:
-            print(f"⚠️ Helper Role NOT FOUND")
-        
-        print(f"\n🔄 APPLYING NEW OVERWRITES...")
-        print(f"   Total overwrites to apply: {len(new_overwrites)}")
-        
-        # APPLY THE NEW PERMISSIONS
-        try:
-            await interaction.channel.edit(overwrites=new_overwrites)
-            print(f"✅ Channel.edit() completed successfully!")
-        except discord.Forbidden as e:
-            print(f"❌ FORBIDDEN ERROR: {e}")
-            print(f"   Bot lacks permissions to edit channel!")
-        except discord.HTTPException as e:
-            print(f"❌ HTTP EXCEPTION: {e}")
-        except Exception as e:
-            print(f"❌ UNKNOWN ERROR: {e}")
-        
-        # Wait for Discord to process
-        await asyncio.sleep(1)
-        
-        print(f"\n📊 PERMISSIONS AFTER CLOSE:")
-        # Refresh channel object
-        channel = guild.get_channel(interaction.channel.id)
-        for target, overwrite in channel.overwrites.items():
-            if isinstance(target, discord.Role):
-                print(f"   Role: {target.name} → {overwrite}")
-            elif isinstance(target, discord.Member):
-                print(f"   User: {target.name} → {overwrite}")
-            else:
-                print(f"   Other: {target} → {overwrite}")
-        
-        print("="*60)
-        print(f"🔒 TICKET CLOSE COMPLETE")
-        print("="*60 + "\n")
-        
+        # === STEP 3: SEND DELETE BUTTON (BEFORE DATABASE) ===
         delete_embed = discord.Embed(
             title="🗑️ Delete Channel?",
             description=(
@@ -563,12 +465,50 @@ class TicketActionView(discord.ui.View):
         )
         
         delete_view = DeleteChannelView()
+        await interaction.followup.send(embed=delete_embed, view=delete_view, ephemeral=False)
         
-        await interaction.followup.send(
-            embed=delete_embed,
-            view=delete_view,
-            ephemeral=False
-        )
+        # === STEP 4: DATABASE OPERATIONS (LAST, WITH ERROR HANDLING) ===
+        try:
+            # Mark as closed
+            ticket["is_closed"] = True
+            await bot.db.save_ticket(ticket)
+            
+            # Award points
+            for helper_id in ticket["helpers"]:
+                try:
+                    await bot.db.add_points(helper_id, points_per_helper)
+                except Exception as e:
+                    print(f"⚠️ Failed to award points to {helper_id}: {e}")
+            
+            # Generate transcript
+            try:
+                await generate_transcript(interaction.channel, bot, ticket)
+            except Exception as e:
+                print(f"⚠️ Transcript generation failed: {e}")
+            
+            # Save history
+            try:
+                await bot.db.save_ticket_history({
+                    "channel_id": ticket["channel_id"],
+                    "category": ticket["category"],
+                    "requestor_id": ticket["requestor_id"],
+                    "helpers": json.dumps(ticket["helpers"]),
+                    "points_per_helper": points_per_helper,
+                    "total_points_awarded": total_awarded,
+                    "closed_by": interaction.user.id
+                })
+            except Exception as e:
+                print(f"⚠️ History save failed: {e}")
+            
+            # Delete from active
+            try:
+                await bot.db.delete_ticket(ticket["channel_id"])
+            except Exception as e:
+                print(f"⚠️ Ticket deletion failed: {e}")
+                
+        except Exception as e:
+            print(f"⚠️ Database error during close (ticket still closed): {e}")
+            traceback.print_exc()
 
 
 class DeleteChannelView(discord.ui.View):
