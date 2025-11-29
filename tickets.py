@@ -262,9 +262,14 @@ class TicketModal(discord.ui.Modal):
         # Create ticket action buttons
         view = TicketActionView()
         
-        # Send ticket message
+        # Send ticket message with REQUESTOR + HELPER ROLE PING
+        ping_content = f"{interaction.user.mention}"
+        if helper_role:
+            ping_content += f" <@&{helper_role.id}>"
+        ping_content += " ticket created!"
+        
         ticket_msg = await channel.send(
-            content=f"{interaction.user.mention} ticket created!",
+            content=ping_content,
             embed=embed,
             view=view
         )
@@ -421,60 +426,68 @@ class TicketActionView(discord.ui.View):
         
         await bot.db.delete_ticket(ticket["channel_id"])
         
-        # ===== COMPLETELY REMOVE ALL PERMISSIONS =====
+        # ===== BLOCK EVERYONE EXCEPT STAFF/ADMIN =====
         guild = interaction.guild
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
         helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
         
-        # 1. Remove requestor completely
+        # Build new overwrites - ONLY staff can see
+        new_overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        }
+        
+        if admin_role:
+            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        if staff_role:
+            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        
+        # EXPLICITLY BLOCK REQUESTOR
         requestor = guild.get_member(ticket["requestor_id"])
         if requestor:
-            try:
-                await interaction.channel.set_permissions(requestor, overwrite=None)
-            except:
-                pass
+            new_overwrites[requestor] = discord.PermissionOverwrite(
+                view_channel=False,
+                read_messages=False,
+                send_messages=False,
+                read_message_history=False
+            )
         
-        # 2. Remove individual helpers (except staff/admin)
+        # EXPLICITLY BLOCK ALL HELPERS (individual users)
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
+                # Check if this helper is staff/admin
                 is_helper_staff = False
                 if admin_role and admin_role in helper.roles:
                     is_helper_staff = True
                 if staff_role and staff_role in helper.roles:
                     is_helper_staff = True
                 
+                # Only block if not staff/admin
                 if not is_helper_staff:
-                    try:
-                        await interaction.channel.set_permissions(helper, overwrite=None)
-                    except:
-                        pass
+                    new_overwrites[helper] = discord.PermissionOverwrite(
+                        view_channel=False,
+                        read_messages=False,
+                        send_messages=False,
+                        read_message_history=False
+                    )
         
-        # 3. COMPLETELY REMOVE HELPER ROLE OVERRIDE
+        # EXPLICITLY BLOCK HELPER ROLE
         if helper_role:
-            try:
-                await interaction.channel.set_permissions(helper_role, overwrite=None)
-                print(f"✅ Removed Helper role override from {interaction.channel.name}")
-            except Exception as e:
-                print(f"❌ Failed to remove Helper role: {e}")
-        
-        # 4. Wait a moment then LOCK the channel to everyone except staff
-        await asyncio.sleep(0.5)
-        
-        # Set new clean permissions - ONLY staff/admin/bot can see
-        try:
-            await interaction.channel.edit(
-                overwrites={
-                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                    guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-                    admin_role: discord.PermissionOverwrite(view_channel=True, send_messages=True) if admin_role else None,
-                    staff_role: discord.PermissionOverwrite(view_channel=True, send_messages=True) if staff_role else None,
-                }
+            new_overwrites[helper_role] = discord.PermissionOverwrite(
+                view_channel=False,
+                read_messages=False,
+                send_messages=False,
+                read_message_history=False
             )
-            print(f"✅ Reset channel permissions to staff-only")
+        
+        # APPLY THE NEW PERMISSIONS
+        try:
+            await interaction.channel.edit(overwrites=new_overwrites)
+            print(f"✅ Successfully blocked all non-staff from {interaction.channel.name}")
         except Exception as e:
-            print(f"❌ Failed to reset channel permissions: {e}")
+            print(f"❌ Failed to update channel permissions: {e}")
         
         delete_embed = discord.Embed(
             title="🗑️ Delete Channel?",
