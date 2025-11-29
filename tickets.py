@@ -29,7 +29,7 @@ class TicketButton(discord.ui.Button):
         
         super().__init__(
             label=label,
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"open_ticket::{category}",
             emoji=config.CUSTOM_EMOJI,  # <:URE:1429522388395233331>
             row=row
