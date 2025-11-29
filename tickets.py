@@ -29,7 +29,7 @@ class TicketButton(discord.ui.Button):
         
         super().__init__(
             label=label,
-            style=discord.ButtonStyle.secondary,
+            style=discord.ButtonStyle.secondary,  # Black/Gray buttons
             custom_id=f"open_ticket::{category}",
             emoji=config.CUSTOM_EMOJI,  # <:URE:1429522388395233331>
             row=row
@@ -445,12 +445,13 @@ class TicketActionView(discord.ui.View):
         # Delete ticket from active tickets
         await bot.db.delete_ticket(ticket["channel_id"])
         
-        # Remove ALL permissions (helpers AND requestor)
+        # ===== REMOVE ALL PERMISSIONS =====
         guild = interaction.guild
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
         
-        # Remove requestor permissions
+        # 1. Remove REQUESTOR permissions
         requestor = guild.get_member(ticket["requestor_id"])
         if requestor:
             try:
@@ -458,7 +459,7 @@ class TicketActionView(discord.ui.View):
             except:
                 pass
         
-        # Remove helper permissions (except staff/admin)
+        # 2. Remove individual HELPER permissions (except staff/admin)
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
@@ -475,6 +476,13 @@ class TicketActionView(discord.ui.View):
                         await interaction.channel.set_permissions(helper, overwrite=None)
                     except:
                         pass
+        
+        # 3. Remove HELPER ROLE permission from channel
+        if helper_role:
+            try:
+                await interaction.channel.set_permissions(helper_role, overwrite=None)
+            except:
+                pass
         
         # Create delete confirmation embed with button
         delete_embed = discord.Embed(
@@ -572,6 +580,7 @@ def create_ticket_embed(
     if concerns != "None":
         embed.add_field(name="📝 Concerns", value=concerns, inline=False)
     
+    # NO FOOTER - Room number removed
     
     return embed
 
