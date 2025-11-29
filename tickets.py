@@ -27,22 +27,11 @@ class TicketButton(discord.ui.Button):
     def __init__(self, category: str, row: int):
         label = category.replace(" Express", "")
         
-        # Set emoji based on category
-        emoji_map = {
-            "UltraSpeaker Express": "🔊",
-            "Ultra Gramiel Express": "⚔️",
-            "Daily 4-Man Express": "👥",
-            "Daily 7-Man Express": "👥",
-            "Weekly Ultra Express": "📅",
-            "GrimChallenge Express": "💀",
-            "Daily Temple Express": "⛩️",
-        }
-        
         super().__init__(
             label=label,
             style=discord.ButtonStyle.primary,
             custom_id=f"open_ticket::{category}",
-            emoji=emoji_map.get(category, "🎫"),
+            emoji=config.CUSTOM_EMOJI,  # <:URE:1429522388395233331>
             row=row
         )
         self.category = category
@@ -219,12 +208,15 @@ class TicketModal(discord.ui.Modal):
             await interaction.followup.send("❌ Ticket category not found!", ephemeral=True)
             return
         
-        # Generate random number for ticket
-        random_number = random.randint(1000, 9999)
+        # Generate random number for ticket (10000-99999)
+        random_number = random.randint(10000, 99999)
         
         # Get channel prefix
         prefix = config.CATEGORY_METADATA.get(self.category, {}).get("prefix", "ticket")
-        channel_name = f"{prefix}-{random_number}"
+        
+        # Create channel name: prefix-username
+        username = interaction.user.name.lower().replace(" ", "")[:20]
+        channel_name = f"{prefix}-{username}"
         
         # Create ticket channel
         overwrites = {
@@ -290,7 +282,8 @@ class TicketModal(discord.ui.Modal):
             "in_game_name": self.in_game_name.value,
             "concerns": self.concerns.value or "None",
             "selected_bosses": json.dumps(self.selected_bosses),
-            "selected_server": self.selected_server
+            "selected_server": self.selected_server,
+            "is_closed": False  # Track if ticket is closed
         })
         
         await interaction.followup.send(
@@ -312,6 +305,11 @@ class TicketActionView(discord.ui.View):
         
         if not ticket:
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
+            return
+        
+        # Check if ticket is already closed
+        if ticket.get("is_closed", False):
+            await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
             return
         
         # Check if user is requestor
@@ -379,7 +377,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="close_ticket")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Close and reward ticket"""
+        """Close and reward ticket - STAFF/ADMIN ONLY"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -387,16 +385,24 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
             return
         
-        # Check permissions (staff/admin or requestor)
+        # Check if already closed
+        if ticket.get("is_closed", False):
+            await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
+            return
+        
+        # Check permissions (STAFF/ADMIN ONLY)
         member = interaction.user
         is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
-        is_requestor = member.id == ticket["requestor_id"]
         
-        if not (is_staff or is_requestor):
-            await interaction.response.send_message("❌ Only staff or the requestor can close this ticket.", ephemeral=True)
+        if not is_staff:
+            await interaction.response.send_message("❌ Only staff or admins can close tickets.", ephemeral=True)
             return
         
         await interaction.response.defer()
+        
+        # Mark ticket as closed immediately
+        ticket["is_closed"] = True
+        await bot.db.save_ticket(ticket)
         
         # Award points to helpers
         points_per_helper = ticket["points"]
@@ -439,11 +445,20 @@ class TicketActionView(discord.ui.View):
         # Delete ticket from active tickets
         await bot.db.delete_ticket(ticket["channel_id"])
         
-        # Remove helper permissions (but keep staff/admin)
+        # Remove ALL permissions (helpers AND requestor)
         guild = interaction.guild
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
         
+        # Remove requestor permissions
+        requestor = guild.get_member(ticket["requestor_id"])
+        if requestor:
+            try:
+                await interaction.channel.set_permissions(requestor, overwrite=None)
+            except:
+                pass
+        
+        # Remove helper permissions (except staff/admin)
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
@@ -461,16 +476,52 @@ class TicketActionView(discord.ui.View):
                     except:
                         pass
         
+        # Create delete confirmation embed with button
+        delete_embed = discord.Embed(
+            title="🗑️ Delete Channel?",
+            description=(
+                "This ticket has been closed.\n\n"
+                "Click the button below to delete this channel.\n"
+                "Only staff can delete the channel."
+            ),
+            color=config.COLORS["DANGER"]
+        )
+        
+        delete_view = DeleteChannelView()
+        
         await interaction.followup.send(
-            "✅ Ticket closed! Points awarded. Channel will be deleted in 10 seconds...",
+            embed=delete_embed,
+            view=delete_view,
+            ephemeral=False
+        )
+
+
+class DeleteChannelView(discord.ui.View):
+    """View with delete channel button"""
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="Delete Channel", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="delete_channel")
+    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Delete the channel - STAFF/ADMIN ONLY"""
+        # Check permissions
+        member = interaction.user
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        
+        if not is_staff:
+            await interaction.response.send_message("❌ Only staff or admins can delete the channel.", ephemeral=True)
+            return
+        
+        await interaction.response.send_message(
+            f"🗑️ Channel will be deleted in 5 seconds...",
             ephemeral=False
         )
         
-        # Delete channel after 10 seconds
+        # Delete channel after 5 seconds
         import asyncio
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
         try:
-            await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
+            await interaction.channel.delete(reason=f"Ticket closed and deleted by {interaction.user}")
         except:
             pass
 
@@ -643,32 +694,40 @@ async def setup_tickets(bot):
             await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
             return
         
-        # Create beautiful panel embed
+        # Get ticket panel channel for mention
+        ticket_panel_channel_id = config.CHANNEL_IDS.get("TICKET_PANEL")
+        
+        # Create beautiful panel embed matching your design
         embed = discord.Embed(
-            title="🎫 AQW Helper Ticket System",
+            title="### 🎮 IN-GAME ASSISTANCE 🎮",
             description=(
-                "Welcome to the **Helper Express Service**!\n\n"
-                "Click a button below to create a ticket for the service you need.\n"
-                "Our helpers will assist you as soon as possible!\n\n"
-                "**📋 Available Services:**"
+                "## CHOOSE YOUR TICKET TYPE🚂 💨\n"
+                "Pick the ticket type that fits your request📜\n"
+                f"* <#{ticket_panel_channel_id}>\n"
+                "------------------------------------------------------------\n"
+                "**UltraSpeaker Express**\n"
+                "- The First Speaker\n\n"
+                "**Ultra Gramiel Express**\n"
+                "- Ultra Gramiel\n\n"
+                "**Daily 4-Man Express**\n"
+                "- Daily 4-Man Ultra Bosses\n\n"
+                "**Daily 7-Man Express**\n"
+                "- Daily 7-Man Ultra Bosses\n\n"
+                "**Weekly Ultra Express**\n"
+                "- Weekly Ultra Bosses (excluding speaker, grim and gramiel)\n\n"
+                "**GrimChallenge Express**\n"
+                "- Mechabinky & Raxborg 2.0\n\n"
+                "**Daily Temple Express**\n"
+                "- Daily TempleShrine\n"
+                "-----------------------------------------------------------\n"
+                "### How it works📢\n"
+                "- ✅ Select a \"ticket type\"\n"
+                "- 📝 Fill out the form\n"
+                "- 💁 Helpers join\n"
+                "- 🎉 Get help in your private ticket"
             ),
             color=config.COLORS["PRIMARY"]
         )
-        
-        # Add category descriptions
-        for cat in config.CATEGORIES:
-            meta = config.CATEGORY_METADATA.get(cat, {})
-            points = config.POINT_VALUES.get(cat, 0)
-            slots = config.HELPER_SLOTS.get(cat, 3)
-            
-            embed.add_field(
-                name=f"{cat}",
-                value=f"{meta.get('description', 'No description')}\n💰 **{points} pts** | 👥 **{slots} helpers**",
-                inline=True
-            )
-        
-        embed.set_footer(text="Click a button below to get started! • AQW Express", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-        embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
         
         view = TicketView()
         await interaction.channel.send(embed=embed, view=view)
