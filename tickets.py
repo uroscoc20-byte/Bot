@@ -315,7 +315,7 @@ class TicketModal(discord.ui.Modal):
 
 
 class TicketActionView(discord.ui.View):
-    """Action buttons for ticket (Join, Close)"""
+    """Action buttons for ticket (Join, Close, Cancel)"""
     def __init__(self):
         super().__init__(timeout=None)
     
@@ -382,7 +382,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="close_ticket")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Close ticket - FIXED ORDER: Permissions → Delete Button → Database"""
+        """Close ticket with rewards - STAFF/ADMIN ONLY"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -524,6 +524,128 @@ class TicketActionView(discord.ui.View):
         except Exception as e:
             print(f"⚠️ Database error during close (ticket still closed): {e}")
             traceback.print_exc()
+    
+    @discord.ui.button(label="Cancel Ticket", style=discord.ButtonStyle.secondary, emoji="❌", custom_id="cancel_ticket")
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Cancel ticket WITHOUT rewards - Requestor/Staff/Admin"""
+        bot = interaction.client
+        ticket = await bot.db.get_ticket(interaction.channel_id)
+        
+        if not ticket:
+            await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
+            return
+        
+        if ticket.get("is_closed", False):
+            await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
+            return
+        
+        member = interaction.user
+        is_requestor = interaction.user.id == ticket["requestor_id"]
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        
+        if not (is_requestor or is_staff):
+            await interaction.response.send_message("❌ Only the requestor, staff, or admins can cancel tickets.", ephemeral=True)
+            return
+        
+        await interaction.response.defer()
+        
+        guild = interaction.guild
+        admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
+        staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
+        
+        # === REMOVE PERMISSIONS ===
+        new_overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        }
+        
+        if admin_role:
+            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        if staff_role:
+            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        
+        # Block requestor
+        requestor = guild.get_member(ticket["requestor_id"])
+        if requestor:
+            new_overwrites[requestor] = discord.PermissionOverwrite(
+                view_channel=False,
+                send_messages=False,
+                read_message_history=False
+            )
+        
+        # Block helpers
+        for helper_id in ticket["helpers"]:
+            helper = guild.get_member(helper_id)
+            if helper:
+                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles)
+                if not is_helper_staff:
+                    new_overwrites[helper] = discord.PermissionOverwrite(
+                        view_channel=False,
+                        send_messages=False,
+                        read_message_history=False
+                    )
+        
+        # Block Helper ROLE
+        if helper_role:
+            new_overwrites[helper_role] = discord.PermissionOverwrite(
+                view_channel=False,
+                send_messages=False,
+                read_message_history=False
+            )
+        
+        await interaction.channel.edit(overwrites=new_overwrites)
+        
+        # === SEND CANCELLED EMBED (NO POINTS) ===
+        helpers_text = ", ".join([f"<@{h}>" for h in ticket["helpers"]]) if ticket["helpers"] else "None"
+        
+        cancelled_embed = discord.Embed(
+            title=f"❌ {ticket['category']} (Cancelled)",
+            description="**This ticket was cancelled. No points were awarded.**",
+            color=config.COLORS["DANGER"],
+            timestamp=discord.utils.utcnow()
+        )
+        cancelled_embed.add_field(name="Requestor", value=f"<@{ticket['requestor_id']}>", inline=False)
+        cancelled_embed.add_field(name="Helpers", value=helpers_text, inline=False)
+        cancelled_embed.add_field(name="Points Awarded", value="**0** (Cancelled)", inline=True)
+        cancelled_embed.set_footer(text=f"Cancelled by {interaction.user}")
+        
+        await interaction.channel.send(embed=cancelled_embed)
+        
+        # === SEND DELETE BUTTON ===
+        delete_embed = discord.Embed(
+            title="🗑️ Delete Channel?",
+            description=(
+                "This ticket has been cancelled.\n\n"
+                "Click the button below to delete this channel.\n"
+                "Only staff can delete the channel."
+            ),
+            color=config.COLORS["DANGER"]
+        )
+        
+        delete_view = DeleteChannelView()
+        await interaction.followup.send(embed=delete_embed, view=delete_view, ephemeral=False)
+        
+        # === DATABASE CLEANUP (NO POINTS, NO HISTORY, BUT GENERATE TRANSCRIPT) ===
+        try:
+            ticket["is_closed"] = True
+            await bot.db.save_ticket(ticket)
+            
+            # Generate transcript for cancelled tickets too
+            try:
+                await generate_transcript(interaction.channel, bot, ticket, is_cancelled=True)
+            except Exception as e:
+                print(f"⚠️ Transcript generation failed: {e}")
+            
+            # Delete from active (NO history saved for cancelled tickets)
+            try:
+                await bot.db.delete_ticket(ticket["channel_id"])
+            except Exception as e:
+                print(f"⚠️ Ticket deletion failed: {e}")
+                
+        except Exception as e:
+            print(f"⚠️ Database error during cancel: {e}")
+            traceback.print_exc()
 
 
 class DeleteChannelView(discord.ui.View):
@@ -638,7 +760,7 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
     return "\n".join(commands) if commands else ""
 
 
-async def generate_transcript(channel: discord.TextChannel, bot, ticket: dict):
+async def generate_transcript(channel: discord.TextChannel, bot, ticket: dict, is_cancelled: bool = False):
     """Generate transcript and save to transcript channel"""
     transcript_channel_id = config.CHANNEL_IDS.get("TRANSCRIPT")
     
@@ -653,8 +775,11 @@ async def generate_transcript(channel: discord.TextChannel, bot, ticket: dict):
     async for msg in channel.history(limit=500, oldest_first=True):
         messages.append(msg)
     
+    status = "CANCELLED" if is_cancelled else "CLOSED"
+    
     transcript_lines = [
         f"=== TRANSCRIPT FOR {channel.name.upper()} ===",
+        f"Status: {status}",
         f"Category: {ticket['category']}",
         f"Requestor: {ticket['requestor_id']}",
         f"Room Number: {ticket['random_number']}",
@@ -682,10 +807,12 @@ async def generate_transcript(channel: discord.TextChannel, bot, ticket: dict):
         filename=f"transcript-{channel.name}-{ticket['random_number']}.txt"
     )
     
+    title_status = "Cancelled" if is_cancelled else "Closed"
+    
     embed = discord.Embed(
-        title=f"📄 Transcript: {channel.name}",
-        description=f"**Category:** {ticket['category']}\n**Room Number:** {ticket['random_number']}",
-        color=config.COLORS["PRIMARY"],
+        title=f"📄 Transcript: {channel.name} ({title_status})",
+        description=f"**Category:** {ticket['category']}\n**Room Number:** {ticket['random_number']}\n**Status:** {title_status}",
+        color=config.COLORS["DANGER"] if is_cancelled else config.COLORS["PRIMARY"],
         timestamp=discord.utils.utcnow()
     )
     
