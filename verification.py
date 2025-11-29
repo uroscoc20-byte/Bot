@@ -1,4 +1,4 @@
-# cogs/verification.py
+# verification.py
 # Verification System - Panel, Modal, Channel Creation, Review
 
 import discord
@@ -157,14 +157,11 @@ class VerificationActionView(discord.ui.View):
             pass
 
 
-class Verification(commands.Cog):
-    """Verification system commands"""
+async def setup_verification(bot):
+    """Setup verification commands"""
     
-    def __init__(self, bot):
-        self.bot = bot
-    
-    @app_commands.command(name="verification_panel", description="Post the verification panel (Admin/Staff only)")
-    async def verification_panel(self, interaction: discord.Interaction):
+    @bot.tree.command(name="verification_panel", description="Post the verification panel (Admin/Staff only)")
+    async def verification_panel(interaction: discord.Interaction):
         """Post verification panel"""
         # Check permissions
         member = interaction.user
@@ -192,10 +189,3 @@ class Verification(commands.Cog):
         view = VerificationView()
         await interaction.channel.send(embed=embed, view=view)
         await interaction.response.send_message("✅ Verification panel posted!", ephemeral=True)
-
-
-async def setup(bot):
-    await bot.add_cog(Verification(bot))
-    # Register persistent view
-    bot.add_view(VerificationView())
-    bot.add_view(VerificationActionView())

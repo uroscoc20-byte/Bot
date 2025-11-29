@@ -39,7 +39,7 @@ bot = commands.Bot(
 # Initialize database
 db = Database()
 
-# Store database in bot for access in cogs
+# Store database in bot for access in modules
 bot.db = db
 
 
@@ -64,7 +64,7 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="tickets | /help"
+            name="tickets | /info"
         )
     )
     print("✅ Bot is ready!")
@@ -87,27 +87,34 @@ async def on_command_error(ctx, error):
         print(f"❌ Command error: {error}")
 
 
-async def load_cogs():
-    """Load all cog files"""
-    cogs = [
-        "cogs.tickets",
-        "cogs.verification",
-        "cogs.leaderboard",
-        "cogs.admin",
-    ]
+async def setup_modules():
+    """Setup all module commands and views"""
+    # Import module setup functions
+    from tickets import setup_tickets, TicketView, TicketActionView
+    from verification import setup_verification, VerificationView, VerificationActionView
+    from leaderboard import setup_leaderboard, LeaderboardView
+    from admin import setup_admin
     
-    for cog in cogs:
-        try:
-            await bot.load_extension(cog)
-            print(f"✅ Loaded {cog}")
-        except Exception as e:
-            print(f"❌ Failed to load {cog}: {e}")
+    # Register persistent views
+    bot.add_view(TicketView())
+    bot.add_view(TicketActionView())
+    bot.add_view(VerificationView())
+    bot.add_view(VerificationActionView())
+    bot.add_view(LeaderboardView())
+    
+    # Setup commands
+    await setup_tickets(bot)
+    await setup_verification(bot)
+    await setup_leaderboard(bot)
+    await setup_admin(bot)
+    
+    print("✅ All modules loaded successfully!")
 
 
 async def main():
     """Main entry point"""
     async with bot:
-        await load_cogs()
+        await setup_modules()
         await bot.start(TOKEN)
 
 

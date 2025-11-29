@@ -1,4 +1,4 @@
-# cogs/tickets.py
+# tickets.py
 # Ticket System with Boss Selection and Transcript Generation
 
 import discord
@@ -323,214 +323,194 @@ class TicketActionView(discord.ui.View):
         closed_embed.add_field(name="Helpers", value=helpers_text, inline=False)
         closed_embed.add_field(name="Points per Helper", value=f"**{points_per_helper}**", inline=True)
         closed_embed.add_field(name="Total Points Awarded", value=f"**{total_awarded}**", inline=True)
-        closed_embed.add_field(name="Closed By", value=interaction.user.mention, inline=False)
-        closed_embed.set_footer(text="Ticket closed")
+        closed_embed.set_footer(text=f"Closed by {interaction.user}")
         
-        # Send closed message
         await interaction.channel.send(embed=closed_embed)
         
-        # Generate and send transcript
-        await generate_transcript(interaction.channel, ticket, interaction.user)
+        # Generate and save transcript
+        await generate_transcript(interaction.channel, bot, ticket)
         
-        # Remove ticket from database
-        await bot.db.delete_ticket(interaction.channel_id)
-        
-        # Archive ticket to history
-        await bot.db.archive_ticket({
-            "channel_id": interaction.channel_id,
+        # Save to history
+        await bot.db.save_ticket_history({
+            "channel_id": ticket["channel_id"],
             "category": ticket["category"],
             "requestor_id": ticket["requestor_id"],
-            "helpers": ticket["helpers"],
+            "helpers": json.dumps(ticket["helpers"]),
             "points_per_helper": points_per_helper,
             "total_points_awarded": total_awarded,
             "closed_by": interaction.user.id
         })
         
-        # Send delete message
-        delete_view = DeleteChannelView()
+        # Delete ticket from active tickets
+        await bot.db.delete_ticket(ticket["channel_id"])
+        
         await interaction.followup.send(
-            "✅ Ticket closed and points awarded! Transcript saved. Channel will be deleted in 10 seconds or click the button below.",
-            view=delete_view
+            "✅ Ticket closed! Points awarded. Channel will be deleted in 10 seconds...",
+            ephemeral=False
         )
         
-        # Auto-delete after 10 seconds
+        # Delete channel after 10 seconds
         import asyncio
         await asyncio.sleep(10)
         try:
-            await interaction.channel.delete(reason="Ticket closed")
+            await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
         except:
             pass
 
 
-class DeleteChannelView(discord.ui.View):
-    """Delete button for closed tickets"""
-    def __init__(self):
-        super().__init__(timeout=60)
-    
-    @discord.ui.button(label="Delete Channel", style=discord.ButtonStyle.danger, emoji="🗑️")
-    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Deleting channel...", ephemeral=True)
-        await interaction.channel.delete(reason="Ticket deleted by user")
-
-
-def create_ticket_embed(category: str, requestor_id: int, in_game_name: str, concerns: str, helpers: list, random_number: int, selected_bosses: List[str] = None) -> discord.Embed:
-    """Create ticket embed with selected bosses"""
-    slots = config.HELPER_SLOTS.get(category, 3)
-    helpers_text = ", ".join([f"<@{h}>" for h in helpers]) if helpers else "None"
-    
+def create_ticket_embed(
+    category: str,
+    requestor_id: int,
+    in_game_name: str,
+    concerns: str,
+    helpers: List[int],
+    random_number: int,
+    selected_bosses: Optional[List[str]] = None
+) -> discord.Embed:
+    """Create ticket information embed"""
     embed = discord.Embed(
-        title=f"🎫 {category} Ticket",
-        description=(
-            f"**Requester:** <@{requestor_id}>\n"
-            f"**In-game name:** {in_game_name}\n"
-            f"**Concerns:** {concerns}\n\n"
-            f"**Helpers ({len(helpers)}/{slots}):** {helpers_text}"
-        ),
+        title=f"🎫 {category}",
+        description=config.CATEGORY_METADATA.get(category, {}).get("description", "Ticket"),
         color=config.COLORS["PRIMARY"],
         timestamp=discord.utils.utcnow()
     )
     
-    # Add boss-specific join commands based on selected bosses
-    if selected_bosses and len(selected_bosses) > 0:
-        if category == "Daily 4-Man Express":
-            for boss in selected_bosses:
-                embed.add_field(name=boss, value=f"`/join {boss}-{random_number}`", inline=False)
+    embed.add_field(name="Requestor", value=f"<@{requestor_id}>", inline=True)
+    embed.add_field(name="In-game Name", value=in_game_name, inline=True)
+    embed.add_field(name="Ticket ID", value=f"#{random_number}", inline=True)
+    
+    # Show selected bosses if any
+    if selected_bosses:
+        embed.add_field(
+            name="📋 Selected Bosses",
+            value="\n".join([f"⚔️ {boss}" for boss in selected_bosses]),
+            inline=False
+        )
         
-        elif category == "Daily 7-Man Express":
-            for boss in selected_bosses:
-                commands = config.BOSS_7MAN_COMMANDS.get(boss, [boss])
-                cmd_text = "\n".join([f"`/join {cmd}-{random_number}`" for cmd in commands])
-                embed.add_field(name=boss, value=cmd_text, inline=False)
-        
-        elif category == "Weekly Ultra Express":
-            for boss in selected_bosses:
-                embed.add_field(name=boss, value=f"`/join {boss}-{random_number}`", inline=False)
-    else:
-        # For other categories, show single join command
-        prefix = config.CATEGORY_METADATA.get(category, {}).get("prefix", "ticket")
-        embed.add_field(name="Join Command", value=f"`/join {prefix}-{random_number}`", inline=False)
+        # Generate /join commands
+        join_commands = generate_join_commands(category, selected_bosses)
+        if join_commands:
+            embed.add_field(
+                name="🎮 Join Commands",
+                value=join_commands,
+                inline=False
+            )
+    
+    # Helpers section
+    slots = config.HELPER_SLOTS.get(category, 3)
+    helpers_text = ", ".join([f"<@{h}>" for h in helpers]) if helpers else "Waiting for helpers..."
+    embed.add_field(
+        name=f"👥 Helpers ({len(helpers)}/{slots})",
+        value=helpers_text,
+        inline=False
+    )
+    
+    # Points
+    points = config.POINT_VALUES.get(category, 0)
+    embed.add_field(name="💰 Points per Helper", value=f"**{points}**", inline=True)
+    
+    if concerns != "None":
+        embed.add_field(name="📝 Concerns", value=concerns, inline=False)
+    
+    embed.set_footer(text=f"Use the buttons below to join or close this ticket")
     
     return embed
 
 
-async def generate_transcript(channel: discord.TextChannel, ticket: dict, closed_by: discord.Member):
-    """Generate and send transcript to transcript channel"""
-    try:
-        # Get transcript channel
-        transcript_channel_id = config.CHANNEL_IDS.get("TRANSCRIPT")
-        if not transcript_channel_id:
-            print("⚠️ Transcript channel not configured")
-            return
-        
-        transcript_channel = channel.guild.get_channel(transcript_channel_id)
-        if not transcript_channel:
-            print("⚠️ Transcript channel not found")
-            return
-        
-        # Fetch all messages from ticket channel
-        messages = []
-        async for message in channel.history(limit=None, oldest_first=True):
-            messages.append(message)
-        
-        # Create transcript text
-        transcript_lines = [
-            f"═══════════════════════════════════════════",
-            f"TICKET TRANSCRIPT",
-            f"═══════════════════════════════════════════",
-            f"",
-            f"Ticket: {channel.name}",
-            f"Category: {ticket['category']}",
-            f"Requestor: {channel.guild.get_member(ticket['requestor_id'])}",
-            f"In-Game Name: {ticket.get('in_game_name', 'N/A')}",
-            f"Helpers: {', '.join([str(channel.guild.get_member(h)) for h in ticket['helpers']]) if ticket['helpers'] else 'None'}",
-            f"Closed By: {closed_by}",
-            f"Total Messages: {len(messages)}",
-            f"",
-            f"═══════════════════════════════════════════",
-            f"MESSAGES",
-            f"═══════════════════════════════════════════",
-            f""
-        ]
-        
-        # Add all messages
-        for msg in messages:
-            timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
-            author = f"{msg.author.name}#{msg.author.discriminator}" if msg.author.discriminator != "0" else msg.author.name
-            
-            # Message header
-            transcript_lines.append(f"[{timestamp}] {author}:")
-            
-            # Message content
-            if msg.content:
-                transcript_lines.append(f"  {msg.content}")
-            
-            # Attachments
-            if msg.attachments:
-                for attachment in msg.attachments:
-                    transcript_lines.append(f"  📎 Attachment: {attachment.url}")
-            
-            # Embeds
-            if msg.embeds:
-                for embed in msg.embeds:
-                    if embed.title:
-                        transcript_lines.append(f"  📋 Embed: {embed.title}")
-                    if embed.description:
-                        # Limit description preview to 100 chars
-                        desc_preview = embed.description[:100] + "..." if len(embed.description) > 100 else embed.description
-                        transcript_lines.append(f"     {desc_preview}")
-            
-            transcript_lines.append("")  # Empty line between messages
-        
-        # Add footer
-        transcript_lines.append(f"═══════════════════════════════════════════")
-        transcript_lines.append(f"END OF TRANSCRIPT")
-        transcript_lines.append(f"═══════════════════════════════════════════")
-        
-        # Convert to string
-        transcript_text = "\n".join(transcript_lines)
-        
-        # Create file
-        transcript_file = discord.File(
-            io.BytesIO(transcript_text.encode('utf-8')),
-            filename=f"transcript-{channel.name}.txt"
-        )
-        
-        # Create summary embed
-        helpers_text = ", ".join([f"<@{h}>" for h in ticket["helpers"]]) if ticket["helpers"] else "None"
-        
-        summary_embed = discord.Embed(
-            title=f"📜 Ticket Transcript - {channel.name}",
-            color=config.COLORS["PRIMARY"],
-            timestamp=discord.utils.utcnow()
-        )
-        summary_embed.add_field(name="Category", value=ticket["category"], inline=True)
-        summary_embed.add_field(name="Requestor", value=f"<@{ticket['requestor_id']}>", inline=True)
-        summary_embed.add_field(name="In-Game Name", value=ticket.get('in_game_name', 'N/A'), inline=True)
-        summary_embed.add_field(name="Helpers", value=helpers_text, inline=False)
-        summary_embed.add_field(name="Closed By", value=closed_by.mention, inline=True)
-        summary_embed.add_field(name="Total Messages", value=str(len(messages)), inline=True)
-        summary_embed.set_footer(text=f"Ticket ID: {channel.id}")
-        
-        # Send to transcript channel
-        await transcript_channel.send(
-            embed=summary_embed,
-            file=transcript_file
-        )
-        
-        print(f"✅ Transcript saved for {channel.name}")
-        
-    except Exception as e:
-        print(f"❌ Failed to generate transcript: {e}")
+def generate_join_commands(category: str, selected_bosses: List[str]) -> str:
+    """Generate /join commands based on selected bosses"""
+    commands = []
+    
+    if category == "Daily 4-Man Express":
+        for boss in selected_bosses:
+            commands.append(f"`/join {boss}`")
+    
+    elif category == "Daily 7-Man Express":
+        for boss in selected_bosses:
+            # Check if boss has special commands
+            if boss in config.BOSS_7MAN_COMMANDS:
+                boss_commands = config.BOSS_7MAN_COMMANDS[boss]
+                if len(boss_commands) == 1:
+                    commands.append(f"`/join {boss_commands[0]}`")
+                else:
+                    # Multiple commands (like Originul)
+                    multi = " **OR** ".join([f"`/join {cmd}`" for cmd in boss_commands])
+                    commands.append(f"**{boss}:** {multi}")
+            else:
+                commands.append(f"`/join {boss}`")
+    
+    elif category == "Weekly Ultra Express":
+        for boss in selected_bosses:
+            commands.append(f"`/join {boss}`")
+    
+    return "\n".join(commands) if commands else ""
 
 
-class Tickets(commands.Cog):
-    """Ticket system commands"""
+async def generate_transcript(channel: discord.TextChannel, bot, ticket: dict):
+    """Generate transcript and save to transcript channel"""
+    transcript_channel_id = config.CHANNEL_IDS.get("TRANSCRIPT")
     
-    def __init__(self, bot):
-        self.bot = bot
+    if not transcript_channel_id:
+        return
     
-    @app_commands.command(name="panel", description="Post the ticket panel (Admin/Staff only)")
-    async def panel(self, interaction: discord.Interaction):
+    transcript_channel = bot.get_channel(transcript_channel_id)
+    if not transcript_channel:
+        return
+    
+    # Fetch all messages in the ticket
+    messages = []
+    async for msg in channel.history(limit=500, oldest_first=True):
+        messages.append(msg)
+    
+    # Build transcript text
+    transcript_lines = [
+        f"=== TRANSCRIPT FOR {channel.name.upper()} ===",
+        f"Category: {ticket['category']}",
+        f"Requestor: {ticket['requestor_id']}",
+        f"Ticket ID: #{ticket['random_number']}",
+        f"Created: {channel.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}",
+        "=" * 50,
+        ""
+    ]
+    
+    for msg in messages:
+        timestamp = msg.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        author = f"{msg.author.name}#{msg.author.discriminator}" if msg.author.discriminator != "0" else msg.author.name
+        content = msg.content or "[Embed/Attachment]"
+        
+        transcript_lines.append(f"[{timestamp}] {author}: {content}")
+        
+        # Include embed titles if present
+        if msg.embeds:
+            for embed in msg.embeds:
+                if embed.title:
+                    transcript_lines.append(f"  └─ Embed: {embed.title}")
+    
+    transcript_text = "\n".join(transcript_lines)
+    
+    # Create .txt file
+    file = discord.File(
+        io.BytesIO(transcript_text.encode('utf-8')),
+        filename=f"transcript-{channel.name}-{ticket['random_number']}.txt"
+    )
+    
+    # Send to transcript channel
+    embed = discord.Embed(
+        title=f"📄 Transcript: {channel.name}",
+        description=f"**Category:** {ticket['category']}\n**Ticket ID:** #{ticket['random_number']}",
+        color=config.COLORS["PRIMARY"],
+        timestamp=discord.utils.utcnow()
+    )
+    
+    await transcript_channel.send(embed=embed, file=file)
+
+
+# Slash commands
+async def setup_tickets(bot):
+    """Setup ticket commands"""
+    
+    @bot.tree.command(name="panel", description="Post the ticket panel (Staff only)")
+    async def panel(interaction: discord.Interaction):
         """Post ticket panel"""
         # Check permissions
         member = interaction.user
@@ -541,53 +521,35 @@ class Tickets(commands.Cog):
             return
         
         # Create panel embed
-        category_list = "\n".join([
-            f"**{cat.replace(' Express', '')}**\n- {config.CATEGORY_METADATA.get(cat, {}).get('description', 'No description')}"
-            for cat in config.CATEGORIES
-        ])
-        
         embed = discord.Embed(
-            title="🎮 IN-GAME ASSISTANCE 🎮",
+            title="🎫 Helper Ticket Panel",
             description=(
-                "**CHOOSE YOUR TICKET TYPE** 🚂💨\n"
-                "*Pick the ticket type that fits your request* 📜\n\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"{category_list}\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                "**How it works** 📢\n"
-                "✅ Select a \"ticket type\"\n"
-                "📝 Fill out the form\n"
-                "💁 Helpers join\n"
-                "🎉 Get help in your private ticket"
+                "Click the button below for the category you need help with.\n\n"
+                "**Available Categories:**\n"
+                + "\n".join([f"• {cat}" for cat in config.CATEGORIES])
             ),
             color=config.COLORS["PRIMARY"]
         )
+        embed.set_footer(text="Select a category to open a ticket")
         
         view = TicketView()
         await interaction.channel.send(embed=embed, view=view)
         await interaction.response.send_message("✅ Ticket panel posted!", ephemeral=True)
     
-    @app_commands.command(name="proof", description="Show proof submission guidelines")
-    async def proof(self, interaction: discord.Interaction):
+    @bot.tree.command(name="proof", description="Show proof submission guidelines")
+    async def proof(interaction: discord.Interaction):
         """Show proof guidelines"""
-        cmd_data = config.HARDCODED_COMMANDS["proof"]
-        await interaction.response.send_message(cmd_data["text"], ephemeral=False)
+        cmd_data = config.HARDCODED_COMMANDS.get("proof", {})
+        await interaction.response.send_message(cmd_data.get("text", "No info available."))
     
-    @app_commands.command(name="hrules", description="Show helper rules")
-    async def hrules(self, interaction: discord.Interaction):
+    @bot.tree.command(name="hrules", description="Show helper rules")
+    async def hrules(interaction: discord.Interaction):
         """Show helper rules"""
-        cmd_data = config.HARDCODED_COMMANDS["hrules"]
-        await interaction.response.send_message(cmd_data["text"], ephemeral=False)
+        cmd_data = config.HARDCODED_COMMANDS.get("hrules", {})
+        await interaction.response.send_message(cmd_data.get("text", "No info available."))
     
-    @app_commands.command(name="rrules", description="Show runner rules")
-    async def rrules(self, interaction: discord.Interaction):
+    @bot.tree.command(name="rrules", description="Show runner rules")
+    async def rrules(interaction: discord.Interaction):
         """Show runner rules"""
-        cmd_data = config.HARDCODED_COMMANDS["rrules"]
-        await interaction.response.send_message(cmd_data["text"], ephemeral=False)
-
-
-async def setup(bot):
-    await bot.add_cog(Tickets(bot))
-    # Register persistent views
-    bot.add_view(TicketView())
-    bot.add_view(TicketActionView())
+        cmd_data = config.HARDCODED_COMMANDS.get("rrules", {})
+        await interaction.response.send_message(cmd_data.get("text", "No info available."))

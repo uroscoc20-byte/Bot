@@ -1,4 +1,4 @@
-# cogs/leaderboard.py
+# leaderboard.py
 # Leaderboard and Points System - FINAL VERSION
 
 import discord
@@ -95,28 +95,25 @@ async def create_leaderboard_embed(bot, page: int = 1, per_page: int = 10) -> di
     return embed
 
 
-class Leaderboard(commands.Cog):
-    """Leaderboard and points commands"""
+async def setup_leaderboard(bot):
+    """Setup leaderboard commands"""
     
-    def __init__(self, bot):
-        self.bot = bot
-    
-    @app_commands.command(name="leaderboard", description="Show the helper leaderboard")
-    async def leaderboard(self, interaction: discord.Interaction):
+    @bot.tree.command(name="leaderboard", description="Show the helper leaderboard")
+    async def leaderboard(interaction: discord.Interaction):
         """Display leaderboard with pagination"""
-        embed = await create_leaderboard_embed(self.bot, page=1)
+        embed = await create_leaderboard_embed(bot, page=1)
         view = LeaderboardView(page=1)
         await interaction.response.send_message(embed=embed, view=view)
     
-    @app_commands.command(name="points", description="Check your points or another user's points")
+    @bot.tree.command(name="points", description="Check your points or another user's points")
     @app_commands.describe(user="User to check points for (optional)")
-    async def points(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+    async def points(interaction: discord.Interaction, user: Optional[discord.Member] = None):
         """Check points for a user"""
         target = user or interaction.user
-        points = await self.bot.db.get_points(target.id)
+        points = await bot.db.get_points(target.id)
         
         # Get rank
-        leaderboard = await self.bot.db.get_leaderboard()
+        leaderboard = await bot.db.get_leaderboard()
         rank = None
         for i, entry in enumerate(leaderboard):
             if entry["user_id"] == target.id:
@@ -138,8 +135,8 @@ class Leaderboard(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="info", description="Show all important commands and info")
-    async def info(self, interaction: discord.Interaction):
+    @bot.tree.command(name="info", description="Show all important commands and info")
+    async def info(interaction: discord.Interaction):
         """Show bot commands and information"""
         embed = discord.Embed(
             title="✨ Server Commands & Info",
@@ -189,9 +186,3 @@ class Leaderboard(commands.Cog):
         embed.set_footer(text="Need help? Contact staff!")
         
         await interaction.response.send_message(embed=embed)
-
-
-async def setup(bot):
-    await bot.add_cog(Leaderboard(bot))
-    # Register persistent leaderboard view
-    bot.add_view(LeaderboardView())
