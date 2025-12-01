@@ -319,12 +319,12 @@ class TicketActionView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
     
-@discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent")
-async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-    """Helper joins ticket - ONE TICKET AT A TIME"""
-    try:
-        bot = interaction.client
-        ticket = await bot.db.get_ticket(interaction.channel_id)
+    @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent")
+    async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Helper joins ticket - ONE TICKET AT A TIME"""
+        try:
+            bot = interaction.client
+            ticket = await bot.db.get_ticket(interaction.channel_id)
         
         if not ticket:
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
