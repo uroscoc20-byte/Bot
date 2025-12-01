@@ -65,7 +65,7 @@ async def on_ready():
     bot.add_view(VerificationActionView())
     bot.add_view(LeaderboardView())
     
-    print("✅ Persistent views registered - Buttons will never fail!")
+    print("✅ Persistent views registered - Buttons will work after restarts!")
     
     # Setup all modules
     from tickets import setup_tickets

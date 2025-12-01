@@ -149,6 +149,9 @@ class Database:
             embed_message_id INTEGER,
             in_game_name TEXT,
             concerns TEXT,
+            selected_bosses TEXT DEFAULT '[]',
+            selected_server TEXT,
+            is_closed INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """)
@@ -341,21 +344,31 @@ class Database:
                 return True
             except Exception as e:
                 await self._fallback_to_sqlite(str(e))
-        else:
-            cursor = await self.db.execute("DELETE FROM custom_commands WHERE name = ?", (name,))
-            await self.db.commit()
-        return True
+        cursor = await self.db.execute("DELETE FROM custom_commands WHERE name = ?", (name,))
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def get_custom_command(self, name):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    snap = self.fs.collection("custom_commands").document(str(name)).get()
+                    return snap.to_dict() if snap.exists else None
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        async with self.db.execute("SELECT name, text, image FROM custom_commands WHERE name = ?", (name,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return {"name": row[0], "text": row[1], "image": row[2]}
+            return None
 
     async def get_custom_commands(self):
         if self.backend == "firestore":
             try:
                 def _op():
                     docs = self.fs.collection("custom_commands").stream()
-                    out = []
-                    for d in docs:
-                        data = d.to_dict() or {}
-                        out.append({"name": d.id, "text": data.get("text"), "image": data.get("image")})
-                    return out
+                    return [d.to_dict() for d in docs]
                 return await self._fs_run(_op)
             except Exception as e:
                 await self._fallback_to_sqlite(str(e))
@@ -396,42 +409,131 @@ class Database:
                 return json.loads(row[0])
             return None
 
-    # ========== NEW TICKET METHODS (SAFE TO ADD) ==========
-    
-    async def save_ticket(self, ticket_dict):
+    # ---------- POINTS ----------
+    async def get_points(self, user_id):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    snap = self.fs.collection("user_points").document(str(user_id)).get()
+                    if snap.exists:
+                        return snap.to_dict().get("points", 0)
+                    return 0
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        async with self.db.execute("SELECT points FROM user_points WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+    async def add_points(self, user_id, amount):
+        current = await self.get_points(user_id)
+        new = current + amount
+        await self.set_points(user_id, new)
+        return new
+
+    async def remove_points(self, user_id, amount):
+        current = await self.get_points(user_id)
+        new = max(0, current - amount)
+        await self.set_points(user_id, new)
+        return new
+
+    async def set_points(self, user_id, points):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("user_points").document(str(user_id)).set({"user_id": user_id, "points": points})
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        await self.db.execute(
+            "INSERT INTO user_points(user_id, points) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET points=excluded.points",
+            (user_id, points)
+        )
+        await self.db.commit()
+
+    async def reset_all_points(self):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    docs = self.fs.collection("user_points").stream()
+                    for doc in docs:
+                        doc.reference.delete()
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        await self.db.execute("DELETE FROM user_points")
+        await self.db.commit()
+
+    async def delete_user_points(self, user_id):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("user_points").document(str(user_id)).delete()
+                    return True
+                await self._fs_run(_op)
+                return True
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        cursor = await self.db.execute("DELETE FROM user_points WHERE user_id = ?", (user_id,))
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def get_leaderboard(self):
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    docs = self.fs.collection("user_points").order_by("points", direction=firestore.Query.DESCENDING).stream()
+                    return [d.to_dict() for d in docs]
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        async with self.db.execute("SELECT user_id, points FROM user_points ORDER BY points DESC") as cursor:
+            rows = await cursor.fetchall()
+            return [{"user_id": r[0], "points": r[1]} for r in rows]
+
+    # ---------- TICKETS ----------
+    async def save_ticket(self, ticket_data):
         """Save or update a ticket"""
         if self.backend == "firestore":
             try:
                 def _op():
-                    self.fs.collection("active_tickets").document(str(ticket_dict["channel_id"])).set(ticket_dict)
+                    doc_id = str(ticket_data["channel_id"])
+                    self.fs.collection("active_tickets").document(doc_id).set(ticket_data)
                 return await self._fs_run(_op)
             except Exception as e:
                 await self._fallback_to_sqlite(str(e))
         
+        helpers_json = json.dumps(ticket_data.get("helpers", []))
+        selected_bosses_json = ticket_data.get("selected_bosses", "[]")
+        if isinstance(selected_bosses_json, list):
+            selected_bosses_json = json.dumps(selected_bosses_json)
+        
         await self.db.execute("""
             INSERT INTO active_tickets 
             (channel_id, category, requestor_id, helpers, points, random_number, 
-             proof_submitted, proof, embed_message_id, in_game_name, concerns)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             proof_submitted, proof, embed_message_id, in_game_name, concerns, 
+             selected_bosses, selected_server, is_closed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(channel_id) DO UPDATE SET
                 helpers=excluded.helpers,
                 proof_submitted=excluded.proof_submitted,
                 proof=excluded.proof,
-                embed_message_id=excluded.embed_message_id,
-                in_game_name=excluded.in_game_name,
-                concerns=excluded.concerns
+                is_closed=excluded.is_closed
         """, (
-            ticket_dict["channel_id"],
-            ticket_dict["category"],
-            ticket_dict["requestor_id"],
-            json.dumps(ticket_dict.get("helpers", [])),
-            ticket_dict.get("points", 0),
-            ticket_dict.get("random_number"),
-            1 if ticket_dict.get("proof_submitted") else 0,
-            ticket_dict.get("proof"),
-            ticket_dict.get("embed_message_id"),
-            ticket_dict.get("in_game_name", "N/A"),
-            ticket_dict.get("concerns", "None")
+            ticket_data["channel_id"],
+            ticket_data["category"],
+            ticket_data["requestor_id"],
+            helpers_json,
+            ticket_data.get("points", 0),
+            ticket_data.get("random_number"),
+            ticket_data.get("proof_submitted", False),
+            ticket_data.get("proof"),
+            ticket_data.get("embed_message_id"),
+            ticket_data.get("in_game_name", "N/A"),
+            ticket_data.get("concerns", "None"),
+            selected_bosses_json,
+            ticket_data.get("selected_server", "Unknown"),
+            ticket_data.get("is_closed", False)
         ))
         await self.db.commit()
 
@@ -446,28 +548,69 @@ class Database:
             except Exception as e:
                 await self._fallback_to_sqlite(str(e))
         
-        async with self.db.execute(
-            "SELECT * FROM active_tickets WHERE channel_id = ?", (channel_id,)
-        ) as cursor:
+        async with self.db.execute("""
+            SELECT channel_id, category, requestor_id, helpers, points, random_number,
+                   proof_submitted, proof, embed_message_id, in_game_name, concerns,
+                   selected_bosses, selected_server, is_closed
+            FROM active_tickets WHERE channel_id = ?
+        """, (channel_id,)) as cursor:
             row = await cursor.fetchone()
-            if not row:
-                return None
-            return {
-                "channel_id": row[0],
-                "category": row[1],
-                "requestor_id": row[2],
-                "helpers": json.loads(row[3] or "[]"),
-                "points": row[4],
-                "random_number": row[5],
-                "proof_submitted": bool(row[6]),
-                "proof": row[7],
-                "embed_message_id": row[8],
-                "in_game_name": row[9],
-                "concerns": row[10],
-            }
+            if row:
+                return {
+                    "channel_id": row[0],
+                    "category": row[1],
+                    "requestor_id": row[2],
+                    "helpers": json.loads(row[3]),
+                    "points": row[4],
+                    "random_number": row[5],
+                    "proof_submitted": row[6],
+                    "proof": row[7],
+                    "embed_message_id": row[8],
+                    "in_game_name": row[9],
+                    "concerns": row[10],
+                    "selected_bosses": row[11],
+                    "selected_server": row[12],
+                    "is_closed": row[13]
+                }
+            return None
+
+    async def get_all_tickets(self):
+        """Get all active tickets"""
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    docs = self.fs.collection("active_tickets").where("is_closed", "==", False).stream()
+                    return [d.to_dict() for d in docs]
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        
+        async with self.db.execute("""
+            SELECT channel_id, category, requestor_id, helpers, points, random_number,
+                   proof_submitted, proof, embed_message_id, in_game_name, concerns,
+                   selected_bosses, selected_server, is_closed
+            FROM active_tickets WHERE is_closed = 0
+        """) as cursor:
+            rows = await cursor.fetchall()
+            return [{
+                "channel_id": r[0],
+                "category": r[1],
+                "requestor_id": r[2],
+                "helpers": json.loads(r[3]),
+                "points": r[4],
+                "random_number": r[5],
+                "proof_submitted": r[6],
+                "proof": r[7],
+                "embed_message_id": r[8],
+                "in_game_name": r[9],
+                "concerns": r[10],
+                "selected_bosses": r[11],
+                "selected_server": r[12],
+                "is_closed": r[13]
+            } for r in rows]
 
     async def delete_ticket(self, channel_id):
-        """Delete active ticket"""
+        """Delete a ticket"""
         if self.backend == "firestore":
             try:
                 def _op():
@@ -481,126 +624,3 @@ class Database:
         cursor = await self.db.execute("DELETE FROM active_tickets WHERE channel_id = ?", (channel_id,))
         await self.db.commit()
         return cursor.rowcount > 0
-
-    async def archive_ticket(self, ticket_dict):
-        """Archive closed ticket to history"""
-        if self.backend == "firestore":
-            try:
-                def _op():
-                    self.fs.collection("ticket_history").add(ticket_dict)
-                return await self._fs_run(_op)
-            except Exception as e:
-                await self._fallback_to_sqlite(str(e))
-        
-        await self.db.execute("""
-            INSERT INTO ticket_history 
-            (channel_id, category, requestor_id, helpers, points_per_helper, total_points_awarded, closed_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            ticket_dict.get("channel_id"),
-            ticket_dict.get("category"),
-            ticket_dict.get("requestor_id"),
-            json.dumps(ticket_dict.get("helpers", [])),
-            ticket_dict.get("points_per_helper", 0),
-            ticket_dict.get("total_points_awarded", 0),
-            ticket_dict.get("closed_by")
-        ))
-        await self.db.commit()
-
-    # ========== POINTS METHODS (SAFE TO ADD) ==========
-    
-    async def get_points(self, user_id):
-        """Get points for a user"""
-        if self.backend == "firestore":
-            try:
-                def _op():
-                    snap = self.fs.collection("user_points").document(str(user_id)).get()
-                    if snap.exists:
-                        return snap.to_dict().get("points", 0)
-                    return 0
-                return await self._fs_run(_op)
-            except Exception as e:
-                await self._fallback_to_sqlite(str(e))
-        
-        async with self.db.execute("SELECT points FROM user_points WHERE user_id = ?", (user_id,)) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else 0
-
-    async def set_points(self, user_id, points):
-        """Set exact points for a user"""
-        if self.backend == "firestore":
-            try:
-                def _op():
-                    self.fs.collection("user_points").document(str(user_id)).set({"user_id": user_id, "points": points})
-                return await self._fs_run(_op)
-            except Exception as e:
-                await self._fallback_to_sqlite(str(e))
-        
-        await self.db.execute(
-            "INSERT INTO user_points(user_id, points) VALUES (?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET points=excluded.points",
-            (user_id, points)
-        )
-        await self.db.commit()
-
-    async def add_points(self, user_id, amount):
-        """Add points to a user"""
-        current = await self.get_points(user_id)
-        new_points = current + amount
-        await self.set_points(user_id, new_points)
-        return new_points
-
-    async def remove_points(self, user_id, amount):
-        """Remove points from a user"""
-        current = await self.get_points(user_id)
-        new_points = max(0, current - amount)
-        await self.set_points(user_id, new_points)
-        return new_points
-
-    async def delete_user_points(self, user_id):
-        """Remove user from leaderboard"""
-        if self.backend == "firestore":
-            try:
-                def _op():
-                    self.fs.collection("user_points").document(str(user_id)).delete()
-                    return True
-                await self._fs_run(_op)
-                return True
-            except Exception as e:
-                await self._fallback_to_sqlite(str(e))
-        
-        cursor = await self.db.execute("DELETE FROM user_points WHERE user_id = ?", (user_id,))
-        await self.db.commit()
-        return cursor.rowcount > 0
-
-    async def reset_all_points(self):
-        """Reset all points to 0"""
-        if self.backend == "firestore":
-            try:
-                def _op():
-                    docs = self.fs.collection("user_points").stream()
-                    for doc in docs:
-                        doc.reference.delete()
-                    return True
-                await self._fs_run(_op)
-                return True
-            except Exception as e:
-                await self._fallback_to_sqlite(str(e))
-        
-        await self.db.execute("DELETE FROM user_points")
-        await self.db.commit()
-
-    async def get_leaderboard(self):
-        """Get sorted leaderboard"""
-        if self.backend == "firestore":
-            try:
-                def _op():
-                    docs = self.fs.collection("user_points").order_by("points", direction="DESCENDING").stream()
-                    return [{"user_id": int(d.id), "points": d.to_dict().get("points", 0)} for d in docs]
-                return await self._fs_run(_op)
-            except Exception as e:
-                await self._fallback_to_sqlite(str(e))
-        
-        async with self.db.execute("SELECT user_id, points FROM user_points ORDER BY points DESC") as cursor:
-            rows = await cursor.fetchall()
-            return [{"user_id": r[0], "points": r[1]} for r in rows]

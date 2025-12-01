@@ -319,7 +319,7 @@ class TicketActionView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
     
-    @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="join_ticket")
+    @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent")
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Helper joins ticket - ONE TICKET AT A TIME"""
         bot = interaction.client
@@ -402,7 +402,7 @@ class TicketActionView(discord.ui.View):
         
         await interaction.channel.send(f"✅ {interaction.user.mention} joined as helper!")
     
-    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="close_ticket")
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="ticket_close_persistent")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Close ticket with rewards - STAFF/ADMIN ONLY"""
         bot = interaction.client
@@ -547,7 +547,7 @@ class TicketActionView(discord.ui.View):
             print(f"⚠️ Database error during close (ticket still closed): {e}")
             traceback.print_exc()
     
-    @discord.ui.button(label="Cancel Ticket", style=discord.ButtonStyle.secondary, emoji="❌", custom_id="cancel_ticket")
+    @discord.ui.button(label="Cancel Ticket", style=discord.ButtonStyle.secondary, emoji="❌", custom_id="ticket_cancel_persistent")
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Cancel ticket WITHOUT rewards - Requestor/Staff/Admin"""
         bot = interaction.client
@@ -675,7 +675,7 @@ class DeleteChannelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
     
-    @discord.ui.button(label="Delete Channel", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="delete_channel")
+    @discord.ui.button(label="Delete Channel", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="delete_channel_persistent")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Delete the channel - STAFF/ADMIN ONLY"""
         member = interaction.user
