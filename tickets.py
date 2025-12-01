@@ -307,25 +307,36 @@ class TicketModal(discord.ui.Modal):
             ephemeral=True
         )
         
-        # Send room info in ticket channel (auto-delete after 5 minutes)
-        if requestor_commands:
-            room_msg = await channel.send(
-                f"{interaction.user.mention} **🎮 Your Room Number: `{random_number}`**\n\n"
-                f"**Join Commands:**\n{requestor_commands}\n\n"
-                f"*⏱️ This message will be deleted in 5 minutes. Save the room number!*"
-            )
-        else:
-            room_msg = await channel.send(
-                f"{interaction.user.mention} **🎮 Your Room Number: `{random_number}`**\n\n"
-                f"*⏱️ This message will be deleted in 5 minutes. Save the room number!*"
-            )
-        
-        # Delete after 5 minutes (300 seconds)
-        await asyncio.sleep(300)
+        # DM the requestor with room info (PRIVATE - ONLY REQUESTOR SEES)
         try:
-            await room_msg.delete()
-        except:
-            pass  # Message might already be deleted
+            if requestor_commands:
+                await interaction.user.send(
+                    f"🎫 **Your Ticket Created:** {channel.mention}\n\n"
+                    f"**🎮 Room Number: `{random_number}`**\n\n"
+                    f"**Join Commands:**\n{requestor_commands}\n\n"
+                    f"*Save this information! You can share the room number with helpers when they join.*"
+                )
+            else:
+                await interaction.user.send(
+                    f"🎫 **Your Ticket Created:** {channel.mention}\n\n"
+                    f"**🎮 Room Number: `{random_number}`**\n\n"
+                    f"*Save this information! You can share the room number with helpers when they join.*"
+                )
+        except discord.Forbidden:
+            # User has DMs disabled - send ephemeral fallback
+            if requestor_commands:
+                await interaction.followup.send(
+                    f"⚠️ **I couldn't DM you!** Please enable DMs.\n\n"
+                    f"**🎮 Room Number: `{random_number}`**\n\n"
+                    f"**Join Commands:**\n{requestor_commands}",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"⚠️ **I couldn't DM you!** Please enable DMs.\n\n"
+                    f"**🎮 Room Number: `{random_number}`**",
+                    ephemeral=True
+                )
 
 
 class TicketActionView(discord.ui.View):
@@ -358,19 +369,28 @@ class TicketActionView(discord.ui.View):
                 await interaction.response.send_message("❌ You've already joined this ticket!", ephemeral=True)
                 return
             
-            # Check if user is in another active ticket
+            # Check if user is in another active ticket (with verification that ticket channel exists)
             all_tickets = await bot.db.get_all_tickets()
             for other_ticket in all_tickets:
                 if other_ticket["channel_id"] == interaction.channel_id:
                     continue
                 if interaction.user.id in other_ticket["helpers"]:
+                    # Verify the channel actually exists
                     other_channel = interaction.guild.get_channel(other_ticket["channel_id"])
-                    await interaction.response.send_message(
-                        f"❌ You're already in another ticket: {other_channel.mention if other_channel else 'Unknown channel'}\n"
-                        "You must leave that ticket before joining a new one.",
-                        ephemeral=True
-                    )
-                    return
+                    if other_channel:
+                        # Channel exists, user is actually in another ticket
+                        await interaction.response.send_message(
+                            f"❌ You're already in another ticket: {other_channel.mention}\n"
+                            "You must leave that ticket before joining a new one.\n\n"
+                            "*If you believe this is an error, ask an admin to run `/free_helper @you`*",
+                            ephemeral=True
+                        )
+                        return
+                    else:
+                        # Channel doesn't exist - remove user from phantom ticket
+                        print(f"⚠️ Removing {interaction.user.id} from phantom ticket {other_ticket['channel_id']}")
+                        other_ticket["helpers"].remove(interaction.user.id)
+                        await bot.db.save_ticket(other_ticket)
             
             # Check if ticket is full
             max_helpers = config.HELPER_SLOTS.get(ticket["category"], 3)
@@ -947,6 +967,44 @@ async def setup_tickets(bot):
         view = TicketView()
         await interaction.channel.send(embed=embed, view=view)
         await interaction.response.send_message("✅ Ticket panel posted!", ephemeral=True)
+    
+    @bot.tree.command(name="free_helper", description="Remove a helper from all phantom tickets (Admin only)")
+    async def free_helper(interaction: discord.Interaction, user: discord.Member):
+        """Free a helper stuck in phantom tickets"""
+        member = interaction.user
+        is_admin = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        
+        if not is_admin:
+            await interaction.response.send_message("❌ Only admins can use this command.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        freed_count = 0
+        all_tickets = await bot.db.get_all_tickets()
+        
+        for ticket in all_tickets:
+            if user.id in ticket["helpers"]:
+                # Check if channel exists
+                channel = interaction.guild.get_channel(ticket["channel_id"])
+                if not channel:
+                    # Phantom ticket - remove user
+                    ticket["helpers"].remove(user.id)
+                    await bot.db.save_ticket(ticket)
+                    freed_count += 1
+                    print(f"✅ Freed {user.name} from phantom ticket {ticket['channel_id']}")
+        
+        if freed_count > 0:
+            await interaction.followup.send(
+                f"✅ Freed {user.mention} from **{freed_count}** phantom ticket(s)!\n"
+                f"They can now join new tickets.",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                f"ℹ️ {user.mention} is not stuck in any phantom tickets.",
+                ephemeral=True
+            )
     
     @bot.tree.command(name="proof", description="Show proof submission guidelines")
     async def proof(interaction: discord.Interaction):
