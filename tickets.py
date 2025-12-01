@@ -260,7 +260,7 @@ class TicketModal(discord.ui.Modal):
             selected_server=self.selected_server
         )
         
-        # Create ticket action buttons
+        # Create ticket action buttons (NOW WITH "SHOW ROOM INFO" BUTTON)
         view = TicketActionView()
         
         # Send ticket message with REQUESTOR + HELPER ROLE PING
@@ -293,58 +293,74 @@ class TicketModal(discord.ui.Modal):
             "is_closed": False
         })
         
-        # Generate join commands for requestor
-        requestor_commands = generate_join_commands(
-            self.category, 
-            self.selected_bosses, 
-            random_number, 
-            self.selected_server
-        )
-        
         # Send confirmation in panel channel (ephemeral)
         await interaction.followup.send(
-            f"✅ Ticket created: {channel.mention}",
+            f"✅ Ticket created: {channel.mention}\n\n"
+            f"💡 **Click the 'Show Room Info' button in your ticket to see the room number!**",
             ephemeral=True
         )
-        
-        # DM the requestor with room info (PRIVATE - ONLY REQUESTOR SEES)
-        try:
-            if requestor_commands:
-                await interaction.user.send(
-                    f"🎫 **Your Ticket Created:** {channel.mention}\n\n"
-                    f"**🎮 Room Number: `{random_number}`**\n\n"
-                    f"**Join Commands:**\n{requestor_commands}\n\n"
-                    f"*Save this information! You can share the room number with helpers when they join.*"
-                )
-            else:
-                await interaction.user.send(
-                    f"🎫 **Your Ticket Created:** {channel.mention}\n\n"
-                    f"**🎮 Room Number: `{random_number}`**\n\n"
-                    f"*Save this information! You can share the room number with helpers when they join.*"
-                )
-        except discord.Forbidden:
-            # User has DMs disabled - send ephemeral fallback
-            if requestor_commands:
-                await interaction.followup.send(
-                    f"⚠️ **I couldn't DM you!** Please enable DMs.\n\n"
-                    f"**🎮 Room Number: `{random_number}`**\n\n"
-                    f"**Join Commands:**\n{requestor_commands}",
-                    ephemeral=True
-                )
-            else:
-                await interaction.followup.send(
-                    f"⚠️ **I couldn't DM you!** Please enable DMs.\n\n"
-                    f"**🎮 Room Number: `{random_number}`**",
-                    ephemeral=True
-                )
 
 
 class TicketActionView(discord.ui.View):
-    """Action buttons for ticket (Join, Close, Cancel)"""
+    """Action buttons for ticket (Join, Close, Cancel, Show Room Info)"""
     def __init__(self):
         super().__init__(timeout=None)
     
-    @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent")
+    @discord.ui.button(label="Show Room Info", style=discord.ButtonStyle.primary, emoji="🔢", custom_id="show_room_info_persistent", row=0)
+    async def show_room_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Show room info - REQUESTOR/STAFF/ADMIN ONLY (ephemeral)"""
+        bot = interaction.client
+        ticket = await bot.db.get_ticket(interaction.channel_id)
+        
+        if not ticket:
+            await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
+            return
+        
+        # Check permissions (staff/admin or requestor)
+        member = interaction.user
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        is_requestor = interaction.user.id == ticket["requestor_id"]
+        
+        if not (is_staff or is_requestor):
+            await interaction.response.send_message("❌ Only the requestor, staff, or admins can view room info.", ephemeral=True)
+            return
+        
+        # Parse selected bosses
+        try:
+            selected_bosses_raw = ticket.get("selected_bosses", "[]")
+            if isinstance(selected_bosses_raw, str):
+                selected_bosses = json.loads(selected_bosses_raw)
+            else:
+                selected_bosses = selected_bosses_raw or []
+        except:
+            selected_bosses = []
+        
+        selected_server = ticket.get("selected_server", "Unknown")
+        
+        # Generate join commands
+        join_commands = generate_join_commands(
+            ticket["category"],
+            selected_bosses,
+            ticket["random_number"],
+            selected_server
+        )
+        
+        # Send ephemeral message with room info
+        if join_commands:
+            await interaction.response.send_message(
+                f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
+                f"**Join Commands:**\n{join_commands}\n\n"
+                f"*Share this with your helpers when they join!*",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
+                f"*Share this with your helpers when they join!*",
+                ephemeral=True
+            )
+    
+    @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent", row=1)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Helper joins ticket - ONE TICKET AT A TIME"""
         try:
@@ -478,7 +494,7 @@ class TicketActionView(discord.ui.View):
             except:
                 await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
     
-    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="ticket_close_persistent")
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="ticket_close_persistent", row=1)
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Close ticket with rewards - STAFF/ADMIN/REQUESTOR"""
         bot = interaction.client
@@ -624,7 +640,7 @@ class TicketActionView(discord.ui.View):
             print(f"⚠️ Database error during close (ticket still closed): {e}")
             traceback.print_exc()
     
-    @discord.ui.button(label="Cancel Ticket", style=discord.ButtonStyle.secondary, emoji="❌", custom_id="ticket_cancel_persistent")
+    @discord.ui.button(label="Cancel Ticket", style=discord.ButtonStyle.secondary, emoji="❌", custom_id="ticket_cancel_persistent", row=1)
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Cancel ticket WITHOUT rewards - Requestor/Staff/Admin"""
         bot = interaction.client
