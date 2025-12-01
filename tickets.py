@@ -458,13 +458,12 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
             return
         
-member = interaction.user
-is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
-is_requestor = interaction.user.id == ticket["requestor_id"]
-
-if not (is_staff or is_requestor):
-    await interaction.response.send_message("❌ Only staff, admins, or the requestor can close tickets.", ephemeral=True)
-    return
+        member = interaction.user
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        
+        if not is_staff:
+            await interaction.response.send_message("❌ Only staff or admins can close tickets.", ephemeral=True)
+            return
         
         await interaction.response.defer()
         
