@@ -345,18 +345,16 @@ class TicketActionView(discord.ui.View):
             selected_server
         )
         
-        # Send ephemeral message with room info
+        # Send ephemeral message with room info (NO mention of sharing)
         if join_commands:
             await interaction.response.send_message(
                 f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
-                f"**Join Commands:**\n{join_commands}\n\n"
-                f"*Share this with your helpers when they join!*",
+                f"**Join Commands:**\n{join_commands}",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
-                f"*Share this with your helpers when they join!*",
+                f"🎮 **Room Number: `{ticket['random_number']}`**",
                 ephemeral=True
             )
     
