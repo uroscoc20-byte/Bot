@@ -319,9 +319,10 @@ class TicketActionView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
     
-    @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent")
-    async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Helper joins ticket - ONE TICKET AT A TIME"""
+@discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent")
+async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    """Helper joins ticket - ONE TICKET AT A TIME"""
+    try:
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -333,45 +334,65 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
             return
         
+        # Check if user is requestor
         if interaction.user.id == ticket["requestor_id"]:
-            await interaction.response.send_message("❌ You cannot join your own ticket.", ephemeral=True)
+            await interaction.response.send_message("❌ You cannot join your own ticket!", ephemeral=True)
             return
         
+        # Check if user is already a helper
         if interaction.user.id in ticket["helpers"]:
-            await interaction.response.send_message("❌ You are already helping this ticket.", ephemeral=True)
+            await interaction.response.send_message("❌ You've already joined this ticket!", ephemeral=True)
             return
         
-        # === CHECK IF HELPER IS ALREADY IN ANOTHER TICKET ===
-        all_tickets = await bot.db.get_all_active_tickets()
-        
+        # Check if user is in another active ticket
+        all_tickets = await bot.db.get_all_tickets()
         for other_ticket in all_tickets:
-            # Skip current ticket
             if other_ticket["channel_id"] == interaction.channel_id:
                 continue
-            
-            # Check if user is helping another ticket
             if interaction.user.id in other_ticket["helpers"]:
-                # Get channel mention
-                other_channel = bot.get_channel(other_ticket["channel_id"])
-                channel_mention = other_channel.mention if other_channel else f"<#{other_ticket['channel_id']}>"
-                
+                other_channel = interaction.guild.get_channel(other_ticket["channel_id"])
                 await interaction.response.send_message(
-                    f"❌ You are already helping another ticket: {channel_mention}\n\n"
-                    f"Please finish or leave that ticket before joining a new one.",
+                    f"❌ You're already in another ticket: {other_channel.mention if other_channel else 'Unknown channel'}\n"
+                    "You must leave that ticket before joining a new one.",
                     ephemeral=True
                 )
                 return
         
-        # === ORIGINAL JOIN LOGIC ===
-        slots = config.HELPER_SLOTS.get(ticket["category"], 3)
-        if len(ticket["helpers"]) >= slots:
-            await interaction.response.send_message("❌ This ticket already has the maximum number of helpers.", ephemeral=True)
+        # Check if ticket is full
+        max_helpers = config.HELPER_SLOTS.get(ticket["category"], 3)
+        if len(ticket["helpers"]) >= max_helpers:
+            await interaction.response.send_message(
+                f"❌ This ticket is full! ({len(ticket['helpers'])}/{max_helpers} helpers)",
+                ephemeral=True
+            )
             return
         
+        # Check if user has helper role
+        helper_role = interaction.guild.get_role(config.ROLE_IDS.get("HELPER"))
+        if helper_role and helper_role not in interaction.user.roles:
+            await interaction.response.send_message("❌ You need the Helper role to join tickets!", ephemeral=True)
+            return
+        
+        # Add helper
         ticket["helpers"].append(interaction.user.id)
         await bot.db.save_ticket(ticket)
         
-        selected_bosses = json.loads(ticket.get("selected_bosses", "[]"))
+        # Give channel permissions
+        try:
+            await interaction.channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
+        except Exception as e:
+            print(f"Failed to set permissions: {e}")
+        
+        # Update embed
+        try:
+            selected_bosses_raw = ticket.get("selected_bosses", "[]")
+            if isinstance(selected_bosses_raw, str):
+                selected_bosses = json.loads(selected_bosses_raw)
+            else:
+                selected_bosses = selected_bosses_raw or []
+        except:
+            selected_bosses = []
+        
         selected_server = ticket.get("selected_server", "Unknown")
         
         embed = create_ticket_embed(
@@ -385,23 +406,43 @@ class TicketActionView(discord.ui.View):
             selected_server=selected_server
         )
         
-        await interaction.message.edit(embed=embed)
+        # Update the ticket message
+        try:
+            msg = await interaction.channel.fetch_message(ticket["embed_message_id"])
+            await msg.edit(embed=embed)
+        except Exception as e:
+            print(f"Failed to update embed: {e}")
         
-        join_commands = generate_join_commands(ticket["category"], selected_bosses, ticket["random_number"], selected_server)
+        # Send join commands to helper
+        join_commands = generate_join_commands(
+            ticket["category"],
+            selected_bosses,
+            ticket["random_number"],
+            selected_server
+        )
         
         if join_commands:
             await interaction.response.send_message(
-                f"✅ You joined as helper!\n\n**🎮 Join Commands:**\n{join_commands}",
+                f"✅ You've joined the ticket!\n\n**🎮 Room Number: `{ticket['random_number']}`**\n\n**Join Commands:**\n{join_commands}",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                f"✅ You joined as helper!",
+                f"✅ You've joined the ticket!\n\n**🎮 Room Number: `{ticket['random_number']}`**",
                 ephemeral=True
             )
         
-        await interaction.channel.send(f"✅ {interaction.user.mention} joined as helper!")
+        # Notify channel
+        await interaction.channel.send(f"✅ {interaction.user.mention} joined the ticket!")
     
+    except Exception as e:
+        print(f"❌ Join button error: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+        except:
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="ticket_close_persistent")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Close ticket with rewards - STAFF/ADMIN ONLY"""
