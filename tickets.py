@@ -301,17 +301,31 @@ class TicketModal(discord.ui.Modal):
             self.selected_server
         )
         
-        # Send room info ONLY to requestor (ephemeral)
+        # Send confirmation in panel channel (ephemeral)
+        await interaction.followup.send(
+            f"✅ Ticket created: {channel.mention}",
+            ephemeral=True
+        )
+        
+        # Send room info in ticket channel (auto-delete after 5 minutes)
         if requestor_commands:
-            await interaction.followup.send(
-                f"✅ Ticket created: {channel.mention}\n\n**🎮 Your Room Number: `{random_number}`**\n\n**Join Commands:**\n{requestor_commands}",
-                ephemeral=True
+            room_msg = await channel.send(
+                f"{interaction.user.mention} **🎮 Your Room Number: `{random_number}`**\n\n"
+                f"**Join Commands:**\n{requestor_commands}\n\n"
+                f"*⏱️ This message will be deleted in 5 minutes. Save the room number!*"
             )
         else:
-            await interaction.followup.send(
-                f"✅ Ticket created: {channel.mention}\n\n**🎮 Your Room Number: `{random_number}`**",
-                ephemeral=True
+            room_msg = await channel.send(
+                f"{interaction.user.mention} **🎮 Your Room Number: `{random_number}`**\n\n"
+                f"*⏱️ This message will be deleted in 5 minutes. Save the room number!*"
             )
+        
+        # Delete after 5 minutes (300 seconds)
+        await asyncio.sleep(300)
+        try:
+            await room_msg.delete()
+        except:
+            pass  # Message might already be deleted
 
 
 class TicketActionView(discord.ui.View):
@@ -446,7 +460,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="ticket_close_persistent")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Close ticket with rewards - STAFF/ADMIN ONLY"""
+        """Close ticket with rewards - STAFF/ADMIN/REQUESTOR"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -459,12 +473,12 @@ class TicketActionView(discord.ui.View):
             return
         
         member = interaction.user
-is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
-is_requestor = interaction.user.id == ticket["requestor_id"]
-
-if not (is_staff or is_requestor):
-    await interaction.response.send_message("❌ Only staff, admins, or the requestor can close tickets.", ephemeral=True)
-    return
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        is_requestor = interaction.user.id == ticket["requestor_id"]
+        
+        if not (is_staff or is_requestor):
+            await interaction.response.send_message("❌ Only staff, admins, or the requestor can close tickets.", ephemeral=True)
+            return
         
         await interaction.response.defer()
         
