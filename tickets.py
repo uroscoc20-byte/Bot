@@ -40,6 +40,30 @@ class TicketButton(discord.ui.Button):
     
     async def callback(self, interaction: discord.Interaction):
         """Handle ticket button click"""
+        # Check if user has RESTRICTED role - BLOCK THEM
+        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
+        if restricted_role and restricted_role in interaction.user.roles:
+            await interaction.response.send_message(
+                "❌ You are restricted from opening tickets.",
+                ephemeral=True
+            )
+            return
+        
+        # Check if user is a helper in any active ticket - PREVENT CREATING TICKET
+        bot = interaction.client
+        all_tickets = await bot.db.get_all_tickets()
+        for ticket in all_tickets:
+            if interaction.user.id in ticket["helpers"]:
+                # Verify channel exists
+                channel = interaction.guild.get_channel(ticket["channel_id"])
+                if channel:
+                    await interaction.response.send_message(
+                        f"❌ You cannot create a ticket while you're a helper in another ticket: {channel.mention}\n"
+                        "Please complete or leave that ticket first.",
+                        ephemeral=True
+                    )
+                    return
+        
         # Check if category needs boss selection
         if self.category in ["Daily 4-Man Express", "Daily 7-Man Express", "Weekly Ultra Express"]:
             # Show boss selection menu
@@ -227,15 +251,18 @@ class TicketModal(discord.ui.Modal):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
         
-        # Add staff/admin permissions
+        # Add staff/admin/officer permissions
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        officer_role = guild.get_role(config.ROLE_IDS.get("OFFICER"))
         helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
         
         if admin_role:
             overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if staff_role:
             overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        if officer_role:
+            overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if helper_role:
             overwrites[helper_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         
@@ -260,7 +287,7 @@ class TicketModal(discord.ui.Modal):
             selected_server=self.selected_server
         )
         
-        # Create ticket action buttons (NOW WITH "SHOW ROOM INFO" BUTTON)
+        # Create ticket action buttons
         view = TicketActionView()
         
         # Send ticket message with REQUESTOR + HELPER ROLE PING
@@ -302,13 +329,22 @@ class TicketModal(discord.ui.Modal):
 
 
 class TicketActionView(discord.ui.View):
-    """Action buttons for ticket (Join, Close, Cancel, Show Room Info)"""
+    """Action buttons for ticket (Join, Close, Cancel, Show Room Info, Kick)"""
     def __init__(self):
         super().__init__(timeout=None)
     
     @discord.ui.button(label="Show Room Info", style=discord.ButtonStyle.primary, emoji="🔢", custom_id="show_room_info_persistent", row=0)
     async def show_room_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Show room info - REQUESTOR/STAFF/ADMIN ONLY (ephemeral)"""
+        """Show room info - REQUESTOR/STAFF/ADMIN/OFFICER ONLY (ephemeral)"""
+        # Check if user has RESTRICTED role - BLOCK THEM
+        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
+        if restricted_role and restricted_role in interaction.user.roles:
+            await interaction.response.send_message(
+                "❌ You are restricted from using ticket buttons.",
+                ephemeral=True
+            )
+            return
+        
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -316,13 +352,13 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
             return
         
-        # Check permissions (staff/admin or requestor)
+        # Check permissions (staff/admin/officer or requestor)
         member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
         is_requestor = interaction.user.id == ticket["requestor_id"]
         
         if not (is_staff or is_requestor):
-            await interaction.response.send_message("❌ Only the requestor, staff, or admins can view room info.", ephemeral=True)
+            await interaction.response.send_message("❌ Only the requestor, staff, officers, or admins can view room info.", ephemeral=True)
             return
         
         # Parse selected bosses
@@ -345,7 +381,7 @@ class TicketActionView(discord.ui.View):
             selected_server
         )
         
-        # Send ephemeral message with room info (NO mention of sharing)
+        # Send ephemeral message with room info
         if join_commands:
             await interaction.response.send_message(
                 f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
@@ -358,10 +394,53 @@ class TicketActionView(discord.ui.View):
                 ephemeral=True
             )
     
+    @discord.ui.button(label="Kick Helper", style=discord.ButtonStyle.secondary, emoji="👢", custom_id="kick_helper_persistent", row=0)
+    async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Kick a helper from ticket - STAFF/ADMIN/OFFICER ONLY"""
+        # Check if user has RESTRICTED role - BLOCK THEM
+        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
+        if restricted_role and restricted_role in interaction.user.roles:
+            await interaction.response.send_message(
+                "❌ You are restricted from using ticket buttons.",
+                ephemeral=True
+            )
+            return
+        
+        member = interaction.user
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
+        
+        if not is_staff:
+            await interaction.response.send_message("❌ Only staff, officers, or admins can kick helpers.", ephemeral=True)
+            return
+        
+        bot = interaction.client
+        ticket = await bot.db.get_ticket(interaction.channel_id)
+        
+        if not ticket:
+            await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
+            return
+        
+        if not ticket["helpers"]:
+            await interaction.response.send_message("❌ No helpers to kick from this ticket.", ephemeral=True)
+            return
+        
+        # Show modal to select which helper to kick
+        modal = KickHelperModal(ticket)
+        await interaction.response.send_modal(modal)
+    
     @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent", row=1)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Helper joins ticket - ONE TICKET AT A TIME"""
         try:
+            # Check if user has RESTRICTED role - BLOCK THEM
+            restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
+            if restricted_role and restricted_role in interaction.user.roles:
+                await interaction.response.send_message(
+                    "❌ You are restricted from using ticket buttons.",
+                    ephemeral=True
+                )
+                return
+            
             bot = interaction.client
             ticket = await bot.db.get_ticket(interaction.channel_id)
             
@@ -383,8 +462,23 @@ class TicketActionView(discord.ui.View):
                 await interaction.response.send_message("❌ You've already joined this ticket!", ephemeral=True)
                 return
             
-            # Check if user is in another active ticket (with verification that ticket channel exists)
+            # Check if user is REQUESTOR of another active ticket - PREVENT JOINING
             all_tickets = await bot.db.get_all_tickets()
+            for other_ticket in all_tickets:
+                if other_ticket["channel_id"] == interaction.channel_id:
+                    continue
+                if interaction.user.id == other_ticket["requestor_id"]:
+                    # Verify channel exists
+                    other_channel = interaction.guild.get_channel(other_ticket["channel_id"])
+                    if other_channel:
+                        await interaction.response.send_message(
+                            f"❌ You cannot join tickets while you have an active ticket as requestor: {other_channel.mention}\n"
+                            "Please close or cancel your ticket first.",
+                            ephemeral=True
+                        )
+                        return
+            
+            # Check if user is in another active ticket (with verification that ticket channel exists)
             for other_ticket in all_tickets:
                 if other_ticket["channel_id"] == interaction.channel_id:
                     continue
@@ -461,7 +555,7 @@ class TicketActionView(discord.ui.View):
             except Exception as e:
                 print(f"Failed to update embed: {e}")
             
-            # Send join commands to helper
+            # Generate join commands based on selected bosses IN ORDER
             join_commands = generate_join_commands(
                 ticket["category"],
                 selected_bosses,
@@ -494,7 +588,16 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="ticket_close_persistent", row=1)
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Close ticket with rewards - STAFF/ADMIN/REQUESTOR"""
+        """Close ticket with rewards - STAFF/ADMIN/OFFICER/REQUESTOR"""
+        # Check if user has RESTRICTED role - BLOCK THEM
+        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
+        if restricted_role and restricted_role in interaction.user.roles:
+            await interaction.response.send_message(
+                "❌ You are restricted from using ticket buttons.",
+                ephemeral=True
+            )
+            return
+        
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -507,11 +610,11 @@ class TicketActionView(discord.ui.View):
             return
         
         member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
         is_requestor = interaction.user.id == ticket["requestor_id"]
         
         if not (is_staff or is_requestor):
-            await interaction.response.send_message("❌ Only staff, admins, or the requestor can close tickets.", ephemeral=True)
+            await interaction.response.send_message("❌ Only staff, officers, admins, or the requestor can close tickets.", ephemeral=True)
             return
         
         await interaction.response.defer()
@@ -519,6 +622,7 @@ class TicketActionView(discord.ui.View):
         guild = interaction.guild
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        officer_role = guild.get_role(config.ROLE_IDS.get("OFFICER"))
         helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
         
         # === STEP 1: REMOVE PERMISSIONS IMMEDIATELY ===
@@ -531,6 +635,8 @@ class TicketActionView(discord.ui.View):
             new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if staff_role:
             new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        if officer_role:
+            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         
         # Block requestor
         requestor = guild.get_member(ticket["requestor_id"])
@@ -541,11 +647,11 @@ class TicketActionView(discord.ui.View):
                 read_message_history=False
             )
         
-        # Block helpers (except staff/admin)
+        # Block helpers (except staff/admin/officer)
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
-                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles)
+                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles) or (officer_role and officer_role in helper.roles)
                 if not is_helper_staff:
                     new_overwrites[helper] = discord.PermissionOverwrite(
                         view_channel=False,
@@ -581,7 +687,7 @@ class TicketActionView(discord.ui.View):
         
         await interaction.channel.send(embed=closed_embed)
         
-        # === STEP 3: SEND DELETE BUTTON (BEFORE DATABASE) ===
+        # === STEP 3: SEND DELETE BUTTON ===
         delete_embed = discord.Embed(
             title="🗑️ Delete Channel?",
             description=(
@@ -595,7 +701,7 @@ class TicketActionView(discord.ui.View):
         delete_view = DeleteChannelView()
         await interaction.followup.send(embed=delete_embed, view=delete_view, ephemeral=False)
         
-        # === STEP 4: DATABASE OPERATIONS (LAST, WITH ERROR HANDLING) ===
+        # === STEP 4: DATABASE OPERATIONS ===
         try:
             # Mark as closed
             ticket["is_closed"] = True
@@ -635,12 +741,21 @@ class TicketActionView(discord.ui.View):
                 print(f"⚠️ Ticket deletion failed: {e}")
                 
         except Exception as e:
-            print(f"⚠️ Database error during close (ticket still closed): {e}")
+            print(f"⚠️ Database error during close: {e}")
             traceback.print_exc()
     
     @discord.ui.button(label="Cancel Ticket", style=discord.ButtonStyle.secondary, emoji="❌", custom_id="ticket_cancel_persistent", row=1)
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Cancel ticket WITHOUT rewards - Requestor/Staff/Admin"""
+        """Cancel ticket WITHOUT rewards - Requestor/Staff/Admin/Officer"""
+        # Check if user has RESTRICTED role - BLOCK THEM
+        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
+        if restricted_role and restricted_role in interaction.user.roles:
+            await interaction.response.send_message(
+                "❌ You are restricted from using ticket buttons.",
+                ephemeral=True
+            )
+            return
+        
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -653,11 +768,11 @@ class TicketActionView(discord.ui.View):
             return
         
         member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
         is_requestor = interaction.user.id == ticket["requestor_id"]
         
         if not (is_staff or is_requestor):
-            await interaction.response.send_message("❌ Only staff, admins, or the requestor can cancel tickets.", ephemeral=True)
+            await interaction.response.send_message("❌ Only staff, officers, admins, or the requestor can cancel tickets.", ephemeral=True)
             return
         
         await interaction.response.defer()
@@ -665,6 +780,7 @@ class TicketActionView(discord.ui.View):
         guild = interaction.guild
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        officer_role = guild.get_role(config.ROLE_IDS.get("OFFICER"))
         helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
         
         # === REMOVE PERMISSIONS ===
@@ -677,6 +793,8 @@ class TicketActionView(discord.ui.View):
             new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if staff_role:
             new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        if officer_role:
+            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         
         # Block requestor
         requestor = guild.get_member(ticket["requestor_id"])
@@ -691,7 +809,7 @@ class TicketActionView(discord.ui.View):
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
-                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles)
+                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles) or (officer_role and officer_role in helper.roles)
                 if not is_helper_staff:
                     new_overwrites[helper] = discord.PermissionOverwrite(
                         view_channel=False,
@@ -709,7 +827,7 @@ class TicketActionView(discord.ui.View):
         
         await interaction.channel.edit(overwrites=new_overwrites)
         
-        # === SEND CANCELLED EMBED (NO POINTS) ===
+        # === SEND CANCELLED EMBED ===
         helpers_text = ", ".join([f"<@{h}>" for h in ticket["helpers"]]) if ticket["helpers"] else "None"
         
         cancelled_embed = discord.Embed(
@@ -739,18 +857,18 @@ class TicketActionView(discord.ui.View):
         delete_view = DeleteChannelView()
         await interaction.followup.send(embed=delete_embed, view=delete_view, ephemeral=False)
         
-        # === DATABASE CLEANUP (NO POINTS, NO HISTORY, BUT GENERATE TRANSCRIPT) ===
+        # === DATABASE CLEANUP ===
         try:
             ticket["is_closed"] = True
             await bot.db.save_ticket(ticket)
             
-            # Generate transcript for cancelled tickets too
+            # Generate transcript
             try:
                 await generate_transcript(interaction.channel, bot, ticket, is_cancelled=True)
             except Exception as e:
                 print(f"⚠️ Transcript generation failed: {e}")
             
-            # Delete from active (NO history saved for cancelled tickets)
+            # Delete from active
             try:
                 await bot.db.delete_ticket(ticket["channel_id"])
             except Exception as e:
@@ -761,6 +879,91 @@ class TicketActionView(discord.ui.View):
             traceback.print_exc()
 
 
+class KickHelperModal(discord.ui.Modal):
+    """Modal to kick a helper from ticket"""
+    def __init__(self, ticket: dict):
+        super().__init__(title="Kick Helper")
+        self.ticket = ticket
+        
+        self.helper_mention = discord.ui.TextInput(
+            label="Helper to kick (mention or ID)",
+            placeholder="@username or user ID",
+            required=True,
+            max_length=100,
+            style=discord.TextStyle.short
+        )
+        self.add_item(self.helper_mention)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Kick the specified helper"""
+        bot = interaction.client
+        
+        # Parse user mention or ID
+        helper_input = self.helper_mention.value.strip()
+        helper_id = None
+        
+        # Try to extract ID from mention
+        if helper_input.startswith("<@") and helper_input.endswith(">"):
+            helper_id = int(helper_input.replace("<@", "").replace("!", "").replace(">", ""))
+        else:
+            try:
+                helper_id = int(helper_input)
+            except:
+                await interaction.response.send_message("❌ Invalid user mention or ID.", ephemeral=True)
+                return
+        
+        # Check if helper is in ticket
+        if helper_id not in self.ticket["helpers"]:
+            await interaction.response.send_message("❌ This user is not a helper in this ticket.", ephemeral=True)
+            return
+        
+        # Remove helper
+        self.ticket["helpers"].remove(helper_id)
+        await bot.db.save_ticket(self.ticket)
+        
+        # Remove channel permissions
+        guild = interaction.guild
+        helper = guild.get_member(helper_id)
+        if helper:
+            try:
+                await interaction.channel.set_permissions(helper, overwrite=None)
+            except Exception as e:
+                print(f"Failed to remove permissions: {e}")
+        
+        # Update embed
+        try:
+            selected_bosses_raw = self.ticket.get("selected_bosses", "[]")
+            if isinstance(selected_bosses_raw, str):
+                selected_bosses = json.loads(selected_bosses_raw)
+            else:
+                selected_bosses = selected_bosses_raw or []
+        except:
+            selected_bosses = []
+        
+        selected_server = self.ticket.get("selected_server", "Unknown")
+        
+        embed = create_ticket_embed(
+            category=self.ticket["category"],
+            requestor_id=self.ticket["requestor_id"],
+            in_game_name=self.ticket.get("in_game_name", "N/A"),
+            concerns=self.ticket.get("concerns", "None"),
+            helpers=self.ticket["helpers"],
+            random_number=self.ticket["random_number"],
+            selected_bosses=selected_bosses,
+            selected_server=selected_server
+        )
+        
+        # Update ticket message
+        try:
+            msg = await interaction.channel.fetch_message(self.ticket["embed_message_id"])
+            await msg.edit(embed=embed)
+        except Exception as e:
+            print(f"Failed to update embed: {e}")
+        
+        await interaction.response.send_message(f"✅ Kicked <@{helper_id}> from the ticket.", ephemeral=False)
+        await interaction.channel.send(f"👢 <@{helper_id}> was kicked from the ticket by {interaction.user.mention}.")
+
+
 class DeleteChannelView(discord.ui.View):
     """View with delete channel button"""
     def __init__(self):
@@ -768,12 +971,12 @@ class DeleteChannelView(discord.ui.View):
     
     @discord.ui.button(label="Delete Channel", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="delete_channel_persistent")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Delete the channel - STAFF/ADMIN ONLY"""
+        """Delete the channel - STAFF/ADMIN/OFFICER ONLY"""
         member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
         
         if not is_staff:
-            await interaction.response.send_message("❌ Only staff or admins can delete the channel.", ephemeral=True)
+            await interaction.response.send_message("❌ Only staff, officers, or admins can delete the channel.", ephemeral=True)
             return
         
         await interaction.response.send_message(
@@ -835,28 +1038,43 @@ def create_ticket_embed(
 
 
 def generate_join_commands(category: str, selected_bosses: List[str], room_number: int, server: str) -> str:
-    """Generate /join commands based on selected bosses"""
+    """Generate /join commands based on selected bosses IN CORRECT ORDER"""
     commands = []
     
+    # Define correct order for each category
     if category == "Daily 4-Man Express":
-        for boss in selected_bosses:
-            commands.append(f"`/join {boss}-{room_number}`")
-    
-    elif category == "Daily 7-Man Express":
-        for boss in selected_bosses:
-            if boss in config.BOSS_7MAN_COMMANDS:
-                boss_commands = config.BOSS_7MAN_COMMANDS[boss]
-                if len(boss_commands) == 1:
-                    commands.append(f"`/join {boss_commands[0]}-{room_number}`")
-                else:
-                    multi = " **OR** ".join([f"`/join {cmd}-{room_number}`" for cmd in boss_commands])
-                    commands.append(f"**{boss}:** {multi}")
-            else:
+        # Order: Dage, Tyndarius, Engineer, Warden, Ezrajal
+        boss_order = ["Ultra Dage", "Ultra Tyndarius", "Ultra Engineer", "Ultra Warden", "Ultra Ezrajal"]
+        for boss in boss_order:
+            if boss in selected_bosses:
                 commands.append(f"`/join {boss}-{room_number}`")
     
+    elif category == "Daily 7-Man Express":
+        # Order: Lich, Beast, Deimos, Flibbi, Bane, Xyfrag, Kathool, Astral, Azalith
+        boss_order = ["Ultra Lich", "Ultra Beast", "Ultra Deimos", "Ultra Flibbi", "Ultra Bane", 
+                      "Ultra Xyfrag", "Ultra Kathool", "Ultra Astral", "Ultra Azalith"]
+        for boss in boss_order:
+            if boss in selected_bosses:
+                # Special case for Lich - use frozenlair
+                if boss == "Ultra Lich":
+                    commands.append(f"`/join frozenlair-{room_number}`")
+                else:
+                    if boss in config.BOSS_7MAN_COMMANDS:
+                        boss_commands = config.BOSS_7MAN_COMMANDS[boss]
+                        if len(boss_commands) == 1:
+                            commands.append(f"`/join {boss_commands[0]}-{room_number}`")
+                        else:
+                            multi = " **OR** ".join([f"`/join {cmd}-{room_number}`" for cmd in boss_commands])
+                            commands.append(f"**{boss}:** {multi}")
+                    else:
+                        commands.append(f"`/join {boss}-{room_number}`")
+    
     elif category == "Weekly Ultra Express":
-        for boss in selected_bosses:
-            commands.append(f"`/join {boss}-{room_number}`")
+        # Order: Dage > Nulgath > Drago > Darkon > CDrakath
+        boss_order = ["Ultra Dage", "Ultra Nulgath", "Ultra Drago", "Ultra Darkon", "Ultra Champion Drakath"]
+        for boss in boss_order:
+            if boss in selected_bosses:
+                commands.append(f"`/join {boss}-{room_number}`")
     
     elif category == "UltraSpeaker Express":
         commands.append(f"`/join UltraSpeaker-{room_number}`")
@@ -1019,6 +1237,46 @@ async def setup_tickets(bot):
                 f"ℹ️ {user.mention} is not stuck in any phantom tickets.",
                 ephemeral=True
             )
+    
+    @bot.tree.command(name="give_points", description="Give points to a user (Admin/Staff only)")
+    async def give_points(interaction: discord.Interaction, user: discord.Member, points: int):
+        """Give points to a user"""
+        member = interaction.user
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        
+        if not is_staff:
+            await interaction.response.send_message("❌ Only admins or staff can give points.", ephemeral=True)
+            return
+        
+        if points <= 0:
+            await interaction.response.send_message("❌ Points must be positive.", ephemeral=True)
+            return
+        
+        await bot.db.add_points(user.id, points)
+        await interaction.response.send_message(
+            f"✅ Gave **{points}** points to {user.mention}!",
+            ephemeral=False
+        )
+    
+    @bot.tree.command(name="remove_points", description="Remove points from a user (Admin/Staff only)")
+    async def remove_points(interaction: discord.Interaction, user: discord.Member, points: int):
+        """Remove points from a user"""
+        member = interaction.user
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
+        
+        if not is_staff:
+            await interaction.response.send_message("❌ Only admins or staff can remove points.", ephemeral=True)
+            return
+        
+        if points <= 0:
+            await interaction.response.send_message("❌ Points must be positive.", ephemeral=True)
+            return
+        
+        await bot.db.add_points(user.id, -points)
+        await interaction.response.send_message(
+            f"✅ Removed **{points}** points from {user.mention}!",
+            ephemeral=False
+        )
     
     @bot.tree.command(name="proof", description="Show proof submission guidelines")
     async def proof(interaction: discord.Interaction):

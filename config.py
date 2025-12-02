@@ -8,7 +8,9 @@
 ROLE_IDS = {
     "ADMIN": 1345073680610496602,      # Admin role ID
     "STAFF": 1374821509268373686,      # Staff role ID
+    "OFFICER": 1445116463253033053,    # Officer role ID (NEW!)
     "HELPER": 1368925578895429654,     # Helper role ID
+    "RESTRICTED": 1405930080256921732, # Restricted role - can't open tickets or use buttons (NEW!)
 }
 
 # ============================================================================
@@ -19,7 +21,7 @@ CHANNEL_IDS = {
     "RULES": 1395830522877579304,               # Rules channel
     "VERIFICATION_CATEGORY": 1351864881585852479,  # Category for verification tickets
     "TICKETS_CATEGORY": 1357314571525816442,    # Category for helper tickets
-    "TRANSCRIPT": 1357314848253542570,          # Transcript channel (NEW!)
+    "TRANSCRIPT": 1357314848253542570,          # Transcript channel
 }
 
 # ============================================================================
@@ -73,12 +75,12 @@ CATEGORY_METADATA = {
 }
 
 # ============================================================================
-# HELPER SLOTS - Maximum helpers per category
+# HELPER SLOTS - Maximum helpers per category (UPDATED!)
 # ============================================================================
 HELPER_SLOTS = {
     "GrimChallenge Express": 6,
     "Daily 7-Man Express": 6,
-    "Weekly Ultra Express": 6,
+    "Weekly Ultra Express": 3,        # CHANGED FROM 6 TO 3!
     "UltraSpeaker Express": 3,
     "Ultra Gramiel Express": 3,
     "Daily 4-Man Express": 3,
@@ -99,47 +101,50 @@ POINT_VALUES = {
 }
 
 # ============================================================================
-# BOSS LISTS - For generating /join commands
+# BOSS LISTS - For generating /join commands (UPDATED ORDER!)
 # ============================================================================
+# 4-Man Order: Dage, Tyndarius, Engineer, Warden, Ezrajal
 DAILY_4MAN_BOSSES = [
-    "UltraEzrajal",
-    "UltraWarden",
-    "UltraEngineer",
-    "UltraTyndarius",
-    "UltraDage",
-    "UltraIara",
-    "UltraKala",
+    "Ultra Dage",
+    "Ultra Tyndarius",
+    "Ultra Engineer",
+    "Ultra Warden",
+    "Ultra Ezrajal",
 ]
 
+# 7-Man Order: Lich, Beast, Deimos, Flibbi, Bane, Xyfrag, Kathool, Astral, Azalith
 DAILY_7MAN_BOSSES = [
-    "Astralshrine",
-    "KathoolDepths",
-    "Originul",
-    "ApexAzalith",
-    "LichLord",
-    "Beast",
-    "Deimos",
-    "Lavarockshore",
+    "Ultra Lich",
+    "Ultra Beast",
+    "Ultra Deimos",
+    "Ultra Flibbi",
+    "Ultra Bane",
+    "Ultra Xyfrag",
+    "Ultra Kathool",
+    "Ultra Astral",
+    "Ultra Azalith",
 ]
 
-# Boss-specific join commands for 7-Man (some bosses have multiple commands)
+# Boss-specific join commands for 7-Man (Lich = frozenlair!)
 BOSS_7MAN_COMMANDS = {
-    "Astralshrine": ["Astralshrine"],
-    "KathoolDepths": ["KathoolDepths"],
-    "Originul": ["VoidFlibbi", "VoidNightbane", "VoidXyfrag"],
-    "ApexAzalith": ["ApexAzalith"],
-    "LichLord": ["LichLord"],
-    "Beast": ["SevenCirclesWar"],
-    "Deimos": ["Deimos"],
-    "Lavarockshore": ["Lavarockshore"],
+    "Ultra Lich": ["frozenlair"],     # UPDATED!
+    "Ultra Beast": ["Beast"],
+    "Ultra Deimos": ["Deimos"],
+    "Ultra Flibbi": ["Flibbi"],
+    "Ultra Bane": ["Bane"],
+    "Ultra Xyfrag": ["Xyfrag"],
+    "Ultra Kathool": ["Kathool"],
+    "Ultra Astral": ["Astral"],
+    "Ultra Azalith": ["Azalith"],
 }
 
+# Weekly Order: Dage > Nulgath > Drago > Darkon > CDrakath
 WEEKLY_ULTRA_BOSSES = [
-    "UltraDarkon",
-    "ChampionDrakath",
-    "UltraDage",
-    "UltraNulgath",
-    "UltraDrago",
+    "Ultra Dage",
+    "Ultra Nulgath",
+    "Ultra Drago",
+    "Ultra Darkon",
+    "Ultra Champion Drakath",
 ]
 
 # ============================================================================
