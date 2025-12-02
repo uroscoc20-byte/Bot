@@ -398,7 +398,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Kick Helper", style=discord.ButtonStyle.secondary, emoji="👢", custom_id="kick_helper_persistent", row=0)
     async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Kick a helper from ticket - STAFF/ADMIN/OFFICER ONLY (NOT REQUESTOR)"""
+        """Kick a helper from ticket - STAFF/ADMIN/OFFICER ONLY"""
         # Check if user has RESTRICTED role - BLOCK THEM
         restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
         if restricted_role and restricted_role in interaction.user.roles:
@@ -418,7 +418,7 @@ class TicketActionView(discord.ui.View):
         member = interaction.user
         is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
         
-        # BLOCK REQUESTOR - Only staff/officer/admin
+        # Only staff/officer/admin can kick
         if not is_staff:
             await interaction.response.send_message("❌ Only staff, officers, or admins can kick helpers.", ephemeral=True)
             return
@@ -1300,7 +1300,7 @@ async def setup_tickets(bot):
     
     @bot.tree.command(name="kick_from_ticket", description="Kick a helper from a ticket (Admin/Staff/Officer only)")
     async def kick_from_ticket(interaction: discord.Interaction, user: discord.Member):
-        """Kick a user from current ticket - Admin/Staff/Officer only (NOT REQUESTOR)"""
+        """Kick a user from current ticket - Admin/Staff/Officer only"""
         try:
             bot = interaction.client
             ticket = await bot.db.get_ticket(interaction.channel_id)
@@ -1312,7 +1312,7 @@ async def setup_tickets(bot):
             member = interaction.user
             is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
             
-            # BLOCK REQUESTOR - Only staff/officer/admin
+            # Only staff/officer/admin can kick
             if not is_staff:
                 await interaction.response.send_message("❌ Only admins, staff, or officers can use this command.", ephemeral=True)
                 return
@@ -1376,8 +1376,17 @@ async def setup_tickets(bot):
     async def proof(interaction: discord.Interaction):
         """Show proof guidelines with example image"""
         proof_data = config.HARDCODED_COMMANDS.get("proof", {})
-        text = proof_data.get("text", "No proof guidelines configured.")
         image = proof_data.get("image")
+        
+        # Updated proof text
+        text = (
+            "# 📸 Submit Your Proof\n"
+            "After requesting a ticket and completing the objective, make sure to provide proof!\n"
+            "**❌ No Proof = No Points**\n\n"
+            "1️⃣ Take a screenshot of the **Helpers' names and the quests they completed.**\n"
+            "2️⃣ Send the screenshot **directly inside the ticket.**\n\n"
+            "✅ If everything is submitted correctly, it should look something like this:"
+        )
         
         embed = discord.Embed(
             title="📸 Proof Submission Guide",
