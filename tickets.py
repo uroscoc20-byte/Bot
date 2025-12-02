@@ -302,11 +302,30 @@ class TicketModal(discord.ui.Modal):
             view=view
         )
         
-        # PIN THE TICKET MESSAGE
+        # PIN THE TICKET MESSAGE (with system message cleanup)
         try:
             await ticket_msg.pin(reason="Ticket embed auto-pinned for easy access")
+            print(f"✅ Pinned ticket message in {channel.name}")
+            
+            # Wait a moment for the system message to appear
+            await asyncio.sleep(1)
+            
+            # Delete the "X pinned a message" system notification
+            async for msg in channel.history(limit=10):
+                if msg.type == discord.MessageType.pins_add:
+                    try:
+                        await msg.delete()
+                        print(f"✅ Deleted pin notification in {channel.name}")
+                    except Exception as e:
+                        print(f"⚠️ Could not delete pin notification: {e}")
+                    break
+        except discord.Forbidden:
+            print(f"❌ Bot lacks permission to pin messages in {channel.name}")
+        except discord.HTTPException as e:
+            print(f"❌ HTTP error while pinning: {e}")
         except Exception as e:
-            print(f"⚠️ Failed to pin ticket message: {e}")
+            print(f"❌ Unexpected error while pinning: {e}")
+            traceback.print_exc()
         
         # Save ticket to database
         bot = interaction.client
