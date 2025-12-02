@@ -302,6 +302,12 @@ class TicketModal(discord.ui.Modal):
             view=view
         )
         
+        # PIN THE TICKET MESSAGE
+        try:
+            await ticket_msg.pin(reason="Ticket embed auto-pinned for easy access")
+        except Exception as e:
+            print(f"⚠️ Failed to pin ticket message: {e}")
+        
         # Save ticket to database
         bot = interaction.client
         await bot.db.save_ticket({
