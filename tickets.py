@@ -398,7 +398,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Kick Helper", style=discord.ButtonStyle.secondary, emoji="👢", custom_id="kick_helper_persistent", row=0)
     async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Kick a helper from ticket - STAFF/ADMIN/OFFICER ONLY"""
+        """Kick a helper from ticket - STAFF/ADMIN/OFFICER ONLY (NOT REQUESTOR)"""
         # Check if user has RESTRICTED role - BLOCK THEM
         restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
         if restricted_role and restricted_role in interaction.user.roles:
@@ -408,18 +408,19 @@ class TicketActionView(discord.ui.View):
             )
             return
         
-        member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
-        
-        if not is_staff:
-            await interaction.response.send_message("❌ Only staff, officers, or admins can kick helpers.", ephemeral=True)
-            return
-        
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
         if not ticket:
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
+            return
+        
+        member = interaction.user
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
+        
+        # BLOCK REQUESTOR - Only staff/officer/admin
+        if not is_staff:
+            await interaction.response.send_message("❌ Only staff, officers, or admins can kick helpers.", ephemeral=True)
             return
         
         if not ticket["helpers"]:
@@ -994,22 +995,22 @@ class DeleteChannelView(discord.ui.View):
 
 
 def format_boss_name_for_display(boss: str) -> str:
-    """Remove 'Ultra' prefix from non-ultra bosses for display in embed"""
-    # Bosses that should NOT have "Ultra" in display
-    non_ultra_bosses = {
-        "Ultra Lich": "Lich",
-        "Ultra Beast": "Beast", 
+    """Format boss names correctly for display in embed"""
+    # Correct boss display names
+    boss_display_names = {
+        "Ultra Lich": "Lich Lord",
+        "Ultra Beast": "Beast",
         "Ultra Deimos": "Deimos",
-        "Ultra Flibbi": "Flibbi",
-        "Ultra Bane": "Bane",
-        "Ultra Xyfrag": "Xyfrag",
+        "Ultra Flibbi": "Void Flibbi",
+        "Ultra Bane": "Void Nightbane",
+        "Ultra Xyfrag": "Void Xyfrag",
         "Ultra Kathool": "Kathool",
-        "Ultra Astral": "Astral",
-        "Ultra Azalith": "Azalith",
+        "Ultra Astral": "Astral Shrine",
+        "Ultra Azalith": "Apex Azalith",
         "Ultra Champion Drakath": "Champion Drakath"
     }
     
-    return non_ultra_bosses.get(boss, boss)
+    return boss_display_names.get(boss, boss)
 
 
 def create_ticket_embed(
@@ -1035,7 +1036,7 @@ def create_ticket_embed(
     embed.add_field(name="🌍 Server", value=selected_server, inline=True)
     
     if selected_bosses:
-        # Format boss names to remove "Ultra" where it shouldn't be
+        # Format boss names correctly
         formatted_bosses = [format_boss_name_for_display(boss) for boss in selected_bosses]
         embed.add_field(
             name="📋 Selected Bosses",
@@ -1274,67 +1275,77 @@ async def setup_tickets(bot):
     
     @bot.tree.command(name="kick_from_ticket", description="Kick a helper from a ticket (Admin/Staff/Officer only)")
     async def kick_from_ticket(interaction: discord.Interaction, user: discord.Member):
-        """Kick a user from current ticket - Admin/Staff/Officer only"""
-        member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
-        
-        if not is_staff:
-            await interaction.response.send_message("❌ Only admins, staff, or officers can use this command.", ephemeral=True)
-            return
-        
-        bot = interaction.client
-        ticket = await bot.db.get_ticket(interaction.channel_id)
-        
-        if not ticket:
-            await interaction.response.send_message("❌ This command must be used in a ticket channel.", ephemeral=True)
-            return
-        
-        if user.id not in ticket["helpers"]:
-            await interaction.response.send_message(f"❌ {user.mention} is not a helper in this ticket.", ephemeral=True)
-            return
-        
-        # Remove helper
-        ticket["helpers"].remove(user.id)
-        await bot.db.save_ticket(ticket)
-        
-        # Remove permissions
+        """Kick a user from current ticket - Admin/Staff/Officer only (NOT REQUESTOR)"""
         try:
-            await interaction.channel.set_permissions(user, overwrite=None)
+            bot = interaction.client
+            ticket = await bot.db.get_ticket(interaction.channel_id)
+            
+            if not ticket:
+                await interaction.response.send_message("❌ This command must be used in a ticket channel.", ephemeral=True)
+                return
+            
+            member = interaction.user
+            is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
+            
+            # BLOCK REQUESTOR - Only staff/officer/admin
+            if not is_staff:
+                await interaction.response.send_message("❌ Only admins, staff, or officers can use this command.", ephemeral=True)
+                return
+            
+            if user.id not in ticket["helpers"]:
+                await interaction.response.send_message(f"❌ {user.mention} is not a helper in this ticket.", ephemeral=True)
+                return
+            
+            # Remove helper
+            ticket["helpers"].remove(user.id)
+            await bot.db.save_ticket(ticket)
+            
+            # Remove permissions
+            try:
+                await interaction.channel.set_permissions(user, overwrite=None)
+            except Exception as e:
+                print(f"Failed to remove permissions: {e}")
+            
+            # Update embed
+            try:
+                selected_bosses_raw = ticket.get("selected_bosses", "[]")
+                if isinstance(selected_bosses_raw, str):
+                    selected_bosses = json.loads(selected_bosses_raw)
+                else:
+                    selected_bosses = selected_bosses_raw or []
+            except:
+                selected_bosses = []
+            
+            selected_server = ticket.get("selected_server", "Unknown")
+            
+            embed = create_ticket_embed(
+                category=ticket["category"],
+                requestor_id=ticket["requestor_id"],
+                in_game_name=ticket.get("in_game_name", "N/A"),
+                concerns=ticket.get("concerns", "None"),
+                helpers=ticket["helpers"],
+                random_number=ticket["random_number"],
+                selected_bosses=selected_bosses,
+                selected_server=selected_server
+            )
+            
+            # Update ticket message
+            try:
+                msg = await interaction.channel.fetch_message(ticket["embed_message_id"])
+                await msg.edit(embed=embed)
+            except Exception as e:
+                print(f"Failed to update embed: {e}")
+            
+            await interaction.response.send_message(f"✅ Kicked {user.mention} from the ticket.", ephemeral=False)
+            await interaction.channel.send(f"👢 {user.mention} was kicked from the ticket by {interaction.user.mention}.")
+        
         except Exception as e:
-            print(f"Failed to remove permissions: {e}")
-        
-        # Update embed
-        try:
-            selected_bosses_raw = ticket.get("selected_bosses", "[]")
-            if isinstance(selected_bosses_raw, str):
-                selected_bosses = json.loads(selected_bosses_raw)
-            else:
-                selected_bosses = selected_bosses_raw or []
-        except:
-            selected_bosses = []
-        
-        selected_server = ticket.get("selected_server", "Unknown")
-        
-        embed = create_ticket_embed(
-            category=ticket["category"],
-            requestor_id=ticket["requestor_id"],
-            in_game_name=ticket.get("in_game_name", "N/A"),
-            concerns=ticket.get("concerns", "None"),
-            helpers=ticket["helpers"],
-            random_number=ticket["random_number"],
-            selected_bosses=selected_bosses,
-            selected_server=selected_server
-        )
-        
-        # Update ticket message
-        try:
-            msg = await interaction.channel.fetch_message(ticket["embed_message_id"])
-            await msg.edit(embed=embed)
-        except Exception as e:
-            print(f"Failed to update embed: {e}")
-        
-        await interaction.response.send_message(f"✅ Kicked {user.mention} from the ticket.", ephemeral=False)
-        await interaction.channel.send(f"👢 {user.mention} was kicked from the ticket by {interaction.user.mention}.")
+            print(f"❌ Error in kick_from_ticket: {e}")
+            traceback.print_exc()
+            try:
+                await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+            except:
+                await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
     
     @bot.tree.command(name="give_points", description="Give points to a user (Admin/Staff only)")
     async def give_points(interaction: discord.Interaction, user: discord.Member, points: int):
