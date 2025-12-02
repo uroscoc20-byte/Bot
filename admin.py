@@ -18,6 +18,16 @@ def is_admin_or_staff(interaction: discord.Interaction) -> bool:
     )
 
 
+def is_admin_staff_or_officer(interaction: discord.Interaction) -> bool:
+    """Check if user has admin, staff, or officer role"""
+    member = interaction.user
+    return any(
+        member.get_role(rid) 
+        for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] 
+        if rid
+    )
+
+
 class ConfirmResetView(discord.ui.View):
     """Confirmation view for resetting all points"""
     def __init__(self, bot, admin_user):
@@ -217,10 +227,10 @@ async def setup_admin(bot):
         embed.set_footer(text=f"Modified by {interaction.user}")
         await interaction.response.send_message(embed=embed)
     
-    @bot.tree.command(name="ticket_kick", description="Remove a helper from the current ticket")
+    @bot.tree.command(name="ticket_kick", description="Remove a helper from the current ticket (Officer/Staff/Admin only)")
     @app_commands.describe(user="Helper to remove from this ticket")
     async def ticket_kick(interaction: discord.Interaction, user: discord.Member):
-        """Remove a helper from a ticket"""
+        """Remove a helper from a ticket - OFFICER/STAFF/ADMIN ONLY"""
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
         if not ticket:
@@ -230,13 +240,10 @@ async def setup_admin(bot):
             )
             return
         
-        # Check permissions (staff/admin or requestor)
-        is_staff = is_admin_or_staff(interaction)
-        is_requestor = interaction.user.id == ticket["requestor_id"]
-        
-        if not (is_staff or is_requestor):
+        # Check permissions - OFFICER/STAFF/ADMIN ONLY (requestor CANNOT kick)
+        if not is_admin_staff_or_officer(interaction):
             await interaction.response.send_message(
-                "❌ Only staff or the ticket creator can remove helpers.",
+                "❌ Only officers, staff, or admins can remove helpers.",
                 ephemeral=True
             )
             return
@@ -253,15 +260,18 @@ async def setup_admin(bot):
         ticket["helpers"].remove(user.id)
         await bot.db.save_ticket(ticket)
         
-        # Remove channel permissions (unless staff/admin)
+        # Remove channel permissions (unless staff/admin/officer)
         guild = interaction.guild
         admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
         staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        officer_role = guild.get_role(config.ROLE_IDS.get("OFFICER"))
         
         is_user_staff = False
         if admin_role and admin_role in user.roles:
             is_user_staff = True
         if staff_role and staff_role in user.roles:
+            is_user_staff = True
+        if officer_role and officer_role in user.roles:
             is_user_staff = True
         
         if not is_user_staff:
@@ -273,7 +283,15 @@ async def setup_admin(bot):
         # Update ticket embed
         from tickets import create_ticket_embed
         
-        selected_bosses = json.loads(ticket.get("selected_bosses", "[]"))
+        try:
+            selected_bosses_raw = ticket.get("selected_bosses", "[]")
+            if isinstance(selected_bosses_raw, str):
+                selected_bosses = json.loads(selected_bosses_raw)
+            else:
+                selected_bosses = selected_bosses_raw or []
+        except:
+            selected_bosses = []
+        
         selected_server = ticket.get("selected_server", "Unknown")
         
         embed = create_ticket_embed(
@@ -298,3 +316,5 @@ async def setup_admin(bot):
             f"✅ Removed {user.mention} from this ticket.",
             ephemeral=False
         )
+        
+        await interaction.channel.send(f"👢 {user.mention} was kicked from the ticket by {interaction.user.mention}.")
