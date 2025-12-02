@@ -120,11 +120,11 @@ class BossSelectMenu(discord.ui.Select):
         else:
             boss_list = []
         
-        # Create options
-        options = [
-            discord.SelectOption(label=boss, value=boss, emoji="⚔️")
-            for boss in boss_list
-        ]
+        # Create options with CORRECT display names (remove Ultra from non-ultra bosses)
+        options = []
+        for boss in boss_list:
+            display_name = format_boss_name_for_select(boss)
+            options.append(discord.SelectOption(label=display_name, value=boss, emoji="⚔️"))
         
         super().__init__(
             placeholder=f"Select bosses (1-{len(boss_list)})",
@@ -386,13 +386,13 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message(
                 f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
                 f"**Join Commands:**\n{join_commands}\n\n"
-                f"⚠️ **DO NOT share this room number with anyone!**",
+                f"⚠️ **DO NOT share this room number with anyone outside this ticket!**",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
                 f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
-                f"⚠️ **DO NOT share this room number with anyone!**",
+                f"⚠️ **DO NOT share this room number with anyone outside this ticket!**",
                 ephemeral=True
             )
     
@@ -994,10 +994,9 @@ class DeleteChannelView(discord.ui.View):
             pass
 
 
-def format_boss_name_for_display(boss: str) -> str:
-    """Format boss names correctly for display in embed"""
-    # Correct boss display names
-    boss_display_names = {
+def format_boss_name_for_select(boss: str) -> str:
+    """Format boss names correctly for SELECT DROPDOWN (remove Ultra from non-ultra bosses)"""
+    boss_select_names = {
         "Ultra Lich": "Lich Lord",
         "Ultra Beast": "Beast",
         "Ultra Deimos": "Deimos",
@@ -1010,7 +1009,33 @@ def format_boss_name_for_display(boss: str) -> str:
         "Ultra Champion Drakath": "Champion Drakath"
     }
     
-    return boss_display_names.get(boss, boss)
+    return boss_select_names.get(boss, boss)
+
+
+def format_boss_name_for_embed(boss: str) -> str:
+    """Format boss names for TICKET EMBED (merged names like voidflibbi, ultradage, apexazalith)"""
+    boss_embed_names = {
+        "Ultra Lich": "lichlord",
+        "Ultra Beast": "beast",
+        "Ultra Deimos": "deimos",
+        "Ultra Flibbi": "voidflibbi",
+        "Ultra Bane": "voidnightbane",
+        "Ultra Xyfrag": "voidxyfrag",
+        "Ultra Kathool": "kathool",
+        "Ultra Astral": "astralshrine",
+        "Ultra Azalith": "apexazalith",
+        "Ultra Champion Drakath": "championdrakath",
+        "Ultra Dage": "ultradage",
+        "Ultra Tyndarius": "ultratyndarius",
+        "Ultra Engineer": "ultraengineer",
+        "Ultra Warden": "ultrawarden",
+        "Ultra Ezrajal": "ultraezrajal",
+        "Ultra Nulgath": "ultranulgath",
+        "Ultra Drago": "ultradrago",
+        "Ultra Darkon": "ultradarkon"
+    }
+    
+    return boss_embed_names.get(boss, boss.lower().replace(" ", ""))
 
 
 def create_ticket_embed(
@@ -1036,11 +1061,11 @@ def create_ticket_embed(
     embed.add_field(name="🌍 Server", value=selected_server, inline=True)
     
     if selected_bosses:
-        # Format boss names correctly
-        formatted_bosses = [format_boss_name_for_display(boss) for boss in selected_bosses]
+        # Format boss names as MERGED (voidflibbi, ultradage, apexazalith)
+        formatted_bosses = [format_boss_name_for_embed(boss) for boss in selected_bosses]
         embed.add_field(
             name="📋 Selected Bosses",
-            value="\n".join([f"⚔️ {boss}" for boss in formatted_bosses]),
+            value=", ".join(formatted_bosses),  # Comma-separated merged names
             inline=False
         )
     
@@ -1346,46 +1371,6 @@ async def setup_tickets(bot):
                 await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
             except:
                 await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
-    
-    @bot.tree.command(name="give_points", description="Give points to a user (Admin/Staff only)")
-    async def give_points(interaction: discord.Interaction, user: discord.Member, points: int):
-        """Give points to a user"""
-        member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
-        
-        if not is_staff:
-            await interaction.response.send_message("❌ Only admins or staff can give points.", ephemeral=True)
-            return
-        
-        if points <= 0:
-            await interaction.response.send_message("❌ Points must be positive.", ephemeral=True)
-            return
-        
-        await bot.db.add_points(user.id, points)
-        await interaction.response.send_message(
-            f"✅ Gave **{points}** points to {user.mention}!",
-            ephemeral=False
-        )
-    
-    @bot.tree.command(name="remove_points", description="Remove points from a user (Admin/Staff only)")
-    async def remove_points(interaction: discord.Interaction, user: discord.Member, points: int):
-        """Remove points from a user"""
-        member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF")] if rid)
-        
-        if not is_staff:
-            await interaction.response.send_message("❌ Only admins or staff can remove points.", ephemeral=True)
-            return
-        
-        if points <= 0:
-            await interaction.response.send_message("❌ Points must be positive.", ephemeral=True)
-            return
-        
-        await bot.db.add_points(user.id, -points)
-        await interaction.response.send_message(
-            f"✅ Removed **{points}** points from {user.mention}!",
-            ephemeral=False
-        )
     
     @bot.tree.command(name="proof", description="Show proof submission guidelines")
     async def proof(interaction: discord.Interaction):
