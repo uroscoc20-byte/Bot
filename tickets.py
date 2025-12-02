@@ -387,13 +387,13 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message(
                 f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
                 f"**Join Commands:**\n{join_commands}\n\n"
-                f"⚠️ **DO NOT share this room number with anyone outside this ticket!**",
+                f"⚠️ **DO NOT share this room number with anyone!**",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
                 f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
-                f"⚠️ **DO NOT share this room number with anyone outside this ticket!**",
+                f"⚠️ **DO NOT share this room number with anyone!**",
                 ephemeral=True
             )
     
@@ -572,14 +572,14 @@ class TicketActionView(discord.ui.View):
                     f"✅ You've joined the ticket!\n\n"
                     f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
                     f"**Join Commands:**\n{join_commands}\n\n"
-                    f"⚠️ **DO NOT share this room number with anyone outside this ticket!**",
+                    f"⚠️ **DO NOT share this room number with anyone!**",
                     ephemeral=True
                 )
             else:
                 await interaction.response.send_message(
                     f"✅ You've joined the ticket!\n\n"
                     f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
-                    f"⚠️ **DO NOT share this room number with anyone outside this ticket!**",
+                    f"⚠️ **DO NOT share this room number with anyone!**",
                     ephemeral=True
                 )
             
