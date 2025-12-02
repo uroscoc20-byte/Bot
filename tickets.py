@@ -335,7 +335,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Show Room Info", style=discord.ButtonStyle.primary, emoji="🔢", custom_id="show_room_info_persistent", row=0)
     async def show_room_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Show room info - REQUESTOR/STAFF/ADMIN/OFFICER ONLY (ephemeral)"""
+        """Show room info - REQUESTOR/HELPER/STAFF/ADMIN/OFFICER (ephemeral)"""
         # Check if user has RESTRICTED role - BLOCK THEM
         restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
         if restricted_role and restricted_role in interaction.user.roles:
@@ -352,13 +352,14 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
             return
         
-        # Check permissions (staff/admin/officer or requestor)
+        # Check permissions (staff/admin/officer or requestor or helper)
         member = interaction.user
         is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
         is_requestor = interaction.user.id == ticket["requestor_id"]
+        is_helper = interaction.user.id in ticket["helpers"]
         
-        if not (is_staff or is_requestor):
-            await interaction.response.send_message("❌ Only the requestor, staff, officers, or admins can view room info.", ephemeral=True)
+        if not (is_staff or is_requestor or is_helper):
+            await interaction.response.send_message("❌ Only the requestor, helpers, staff, officers, or admins can view room info.", ephemeral=True)
             return
         
         # Parse selected bosses
@@ -386,13 +387,13 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message(
                 f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
                 f"**Join Commands:**\n{join_commands}\n\n"
-                f"⚠️ **DO NOT share this room number with anyone outside this ticket!**",
+                f"⚠️ **DO NOT share this room number with anyone!**",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
                 f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
-                f"⚠️ **DO NOT share this room number with anyone outside this ticket!**",
+                f"⚠️ **DO NOT share this room number with anyone!**",
                 ephemeral=True
             )
     
@@ -568,12 +569,17 @@ class TicketActionView(discord.ui.View):
             
             if join_commands:
                 await interaction.response.send_message(
-                    f"✅ You've joined the ticket!\n\n**🎮 Room Number: `{ticket['random_number']}`**\n\n**Join Commands:**\n{join_commands}",
+                    f"✅ You've joined the ticket!\n\n"
+                    f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
+                    f"**Join Commands:**\n{join_commands}\n\n"
+                    f"⚠️ **DO NOT share this room number with anyone!**",
                     ephemeral=True
                 )
             else:
                 await interaction.response.send_message(
-                    f"✅ You've joined the ticket!\n\n**🎮 Room Number: `{ticket['random_number']}`**",
+                    f"✅ You've joined the ticket!\n\n"
+                    f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
+                    f"⚠️ **DO NOT share this room number with anyone!**",
                     ephemeral=True
                 )
             
@@ -1109,7 +1115,7 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
                 if boss == "Ultra Lich":
                     commands.append(f"`/join frozenlair-{room_number}`")
                 elif boss == "Ultra Beast":
-                    commands.append(f"`/join beast-{room_number}`")
+                    commands.append(f"`/join sevencircleswar-{room_number}`")
                 elif boss == "Ultra Deimos":
                     commands.append(f"`/join deimos-{room_number}`")
                 elif boss == "Ultra Flibbi":
