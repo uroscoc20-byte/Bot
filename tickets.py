@@ -993,6 +993,25 @@ class DeleteChannelView(discord.ui.View):
             pass
 
 
+def format_boss_name_for_display(boss: str) -> str:
+    """Remove 'Ultra' prefix from non-ultra bosses for display in embed"""
+    # Bosses that should NOT have "Ultra" in display
+    non_ultra_bosses = {
+        "Ultra Lich": "Lich",
+        "Ultra Beast": "Beast", 
+        "Ultra Deimos": "Deimos",
+        "Ultra Flibbi": "Flibbi",
+        "Ultra Bane": "Bane",
+        "Ultra Xyfrag": "Xyfrag",
+        "Ultra Kathool": "Kathool",
+        "Ultra Astral": "Astral",
+        "Ultra Azalith": "Azalith",
+        "Ultra Champion Drakath": "Champion Drakath"
+    }
+    
+    return non_ultra_bosses.get(boss, boss)
+
+
 def create_ticket_embed(
     category: str,
     requestor_id: int,
@@ -1016,9 +1035,11 @@ def create_ticket_embed(
     embed.add_field(name="🌍 Server", value=selected_server, inline=True)
     
     if selected_bosses:
+        # Format boss names to remove "Ultra" where it shouldn't be
+        formatted_bosses = [format_boss_name_for_display(boss) for boss in selected_bosses]
         embed.add_field(
             name="📋 Selected Bosses",
-            value="\n".join([f"⚔️ {boss}" for boss in selected_bosses]),
+            value="\n".join([f"⚔️ {boss}" for boss in formatted_bosses]),
             inline=False
         )
     
