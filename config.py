@@ -8,7 +8,7 @@
 ROLE_IDS = {
     "ADMIN": 1345073680610496602,      # Admin role ID
     "STAFF": 1374821509268373686,      # Staff role ID
-    "OFFICER": 1445116463253033053,    # Officer role ID (NEW!)
+    "OFFICER": 1405154189709017189,    # Officer role ID (NEW!)
     "HELPER": 1445116463253033053,     # Helper role ID
     "RESTRICTED": 1405930080256921732, # Restricted role - can't open tickets or use buttons (NEW!)
 }
