@@ -381,16 +381,18 @@ class TicketActionView(discord.ui.View):
             selected_server
         )
         
-        # Send ephemeral message with room info
+        # Send ephemeral message with room info + WARNING TO NOT SHARE
         if join_commands:
             await interaction.response.send_message(
                 f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
-                f"**Join Commands:**\n{join_commands}",
+                f"**Join Commands:**\n{join_commands}\n\n"
+                f"⚠️ **DO NOT share this room number with anyone!**",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                f"🎮 **Room Number: `{ticket['random_number']}`**",
+                f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
+                f"⚠️ **DO NOT share this room number with anyone!**",
                 ephemeral=True
             )
     
@@ -1047,7 +1049,8 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
         boss_order = ["Ultra Dage", "Ultra Tyndarius", "Ultra Engineer", "Ultra Warden", "Ultra Ezrajal"]
         for boss in boss_order:
             if boss in selected_bosses:
-                commands.append(f"`/join {boss}-{room_number}`")
+                # Ultra + word together
+                commands.append(f"`/join ultra{boss.replace('Ultra ', '').lower()}-{room_number}`")
     
     elif category == "Daily 7-Man Express":
         # Order: Lich, Beast, Deimos, Flibbi, Bane, Xyfrag, Kathool, Astral, Azalith
@@ -1055,38 +1058,48 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
                       "Ultra Xyfrag", "Ultra Kathool", "Ultra Astral", "Ultra Azalith"]
         for boss in boss_order:
             if boss in selected_bosses:
-                # Special case for Lich - use frozenlair
+                # Special cases
                 if boss == "Ultra Lich":
                     commands.append(f"`/join frozenlair-{room_number}`")
-                else:
-                    if boss in config.BOSS_7MAN_COMMANDS:
-                        boss_commands = config.BOSS_7MAN_COMMANDS[boss]
-                        if len(boss_commands) == 1:
-                            commands.append(f"`/join {boss_commands[0]}-{room_number}`")
-                        else:
-                            multi = " **OR** ".join([f"`/join {cmd}-{room_number}`" for cmd in boss_commands])
-                            commands.append(f"**{boss}:** {multi}")
-                    else:
-                        commands.append(f"`/join {boss}-{room_number}`")
+                elif boss == "Ultra Beast":
+                    commands.append(f"`/join beast-{room_number}`")
+                elif boss == "Ultra Deimos":
+                    commands.append(f"`/join deimos-{room_number}`")
+                elif boss == "Ultra Flibbi":
+                    commands.append(f"`/join voidflibbi-{room_number}`")
+                elif boss == "Ultra Bane":
+                    commands.append(f"`/join voidnightbane-{room_number}`")
+                elif boss == "Ultra Xyfrag":
+                    commands.append(f"`/join voidxyfrag-{room_number}`")
+                elif boss == "Ultra Kathool":
+                    commands.append(f"`/join kathooldepths-{room_number}`")
+                elif boss == "Ultra Astral":
+                    commands.append(f"`/join astralshrine-{room_number}`")
+                elif boss == "Ultra Azalith":
+                    commands.append(f"`/join apexazalith-{room_number}`")
     
     elif category == "Weekly Ultra Express":
         # Order: Dage > Nulgath > Drago > Darkon > CDrakath
         boss_order = ["Ultra Dage", "Ultra Nulgath", "Ultra Drago", "Ultra Darkon", "Ultra Champion Drakath"]
         for boss in boss_order:
             if boss in selected_bosses:
-                commands.append(f"`/join {boss}-{room_number}`")
+                if boss == "Ultra Champion Drakath":
+                    commands.append(f"`/join championdrakath-{room_number}`")
+                else:
+                    # Ultra + word together
+                    commands.append(f"`/join ultra{boss.replace('Ultra ', '').lower()}-{room_number}`")
     
     elif category == "UltraSpeaker Express":
-        commands.append(f"`/join UltraSpeaker-{room_number}`")
+        commands.append(f"`/join ultraspeaker-{room_number}`")
     
     elif category == "Ultra Gramiel Express":
-        commands.append(f"`/join UltraGramiel-{room_number}`")
+        commands.append(f"`/join ultragramiel-{room_number}`")
     
     elif category == "GrimChallenge Express":
-        commands.append(f"`/join GrimChallenge-{room_number}`")
+        commands.append(f"`/join grimchallenge-{room_number}`")
     
     elif category == "Daily Temple Express":
-        commands.append(f"`/join TempleShrine-{room_number}`")
+        commands.append(f"`/join templeshrine-{room_number}`")
     
     return "\n".join(commands) if commands else ""
 
@@ -1237,6 +1250,70 @@ async def setup_tickets(bot):
                 f"ℹ️ {user.mention} is not stuck in any phantom tickets.",
                 ephemeral=True
             )
+    
+    @bot.tree.command(name="kick_from_ticket", description="Kick a helper from a ticket (Admin/Staff/Officer only)")
+    async def kick_from_ticket(interaction: discord.Interaction, user: discord.Member):
+        """Kick a user from current ticket - Admin/Staff/Officer only"""
+        member = interaction.user
+        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
+        
+        if not is_staff:
+            await interaction.response.send_message("❌ Only admins, staff, or officers can use this command.", ephemeral=True)
+            return
+        
+        bot = interaction.client
+        ticket = await bot.db.get_ticket(interaction.channel_id)
+        
+        if not ticket:
+            await interaction.response.send_message("❌ This command must be used in a ticket channel.", ephemeral=True)
+            return
+        
+        if user.id not in ticket["helpers"]:
+            await interaction.response.send_message(f"❌ {user.mention} is not a helper in this ticket.", ephemeral=True)
+            return
+        
+        # Remove helper
+        ticket["helpers"].remove(user.id)
+        await bot.db.save_ticket(ticket)
+        
+        # Remove permissions
+        try:
+            await interaction.channel.set_permissions(user, overwrite=None)
+        except Exception as e:
+            print(f"Failed to remove permissions: {e}")
+        
+        # Update embed
+        try:
+            selected_bosses_raw = ticket.get("selected_bosses", "[]")
+            if isinstance(selected_bosses_raw, str):
+                selected_bosses = json.loads(selected_bosses_raw)
+            else:
+                selected_bosses = selected_bosses_raw or []
+        except:
+            selected_bosses = []
+        
+        selected_server = ticket.get("selected_server", "Unknown")
+        
+        embed = create_ticket_embed(
+            category=ticket["category"],
+            requestor_id=ticket["requestor_id"],
+            in_game_name=ticket.get("in_game_name", "N/A"),
+            concerns=ticket.get("concerns", "None"),
+            helpers=ticket["helpers"],
+            random_number=ticket["random_number"],
+            selected_bosses=selected_bosses,
+            selected_server=selected_server
+        )
+        
+        # Update ticket message
+        try:
+            msg = await interaction.channel.fetch_message(ticket["embed_message_id"])
+            await msg.edit(embed=embed)
+        except Exception as e:
+            print(f"Failed to update embed: {e}")
+        
+        await interaction.response.send_message(f"✅ Kicked {user.mention} from the ticket.", ephemeral=False)
+        await interaction.channel.send(f"👢 {user.mention} was kicked from the ticket by {interaction.user.mention}.")
     
     @bot.tree.command(name="give_points", description="Give points to a user (Admin/Staff only)")
     async def give_points(interaction: discord.Interaction, user: discord.Member, points: int):
