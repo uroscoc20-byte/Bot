@@ -667,11 +667,11 @@ class TicketActionView(discord.ui.View):
         
         # Grant Staff/Admin/Officer Permissions including Management
         if admin_role:
-            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
         if staff_role:
-            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
         if officer_role:
-            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
         
         # Block requestor (UNLESS they are staff/admin/officer)
         requestor = guild.get_member(ticket["requestor_id"])
@@ -838,11 +838,11 @@ class TicketActionView(discord.ui.View):
         
         # Grant Staff/Admin/Officer Permissions including Management
         if admin_role:
-            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
         if staff_role:
-            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
         if officer_role:
-            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
         
         # Block requestor (UNLESS they are staff/admin/officer)
         requestor = guild.get_member(ticket["requestor_id"])
