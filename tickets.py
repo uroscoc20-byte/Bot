@@ -665,40 +665,27 @@ class TicketActionView(discord.ui.View):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
         
-        # Grant Staff/Admin/Officer Permissions including Management
         if admin_role:
-            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if staff_role:
-            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if officer_role:
-            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         
-        # Block requestor (UNLESS they are staff/admin/officer)
+        # Block requestor
         requestor = guild.get_member(ticket["requestor_id"])
         if requestor:
-            is_requestor_staff = False
-            for role in [admin_role, staff_role, officer_role]:
-                if role and role in requestor.roles:
-                    is_requestor_staff = True
-                    break
-            
-            if not is_requestor_staff:
-                new_overwrites[requestor] = discord.PermissionOverwrite(
-                    view_channel=False,
-                    send_messages=False,
-                    read_message_history=False
-                )
+            new_overwrites[requestor] = discord.PermissionOverwrite(
+                view_channel=False,
+                send_messages=False,
+                read_message_history=False
+            )
         
         # Block helpers (except staff/admin/officer)
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
-                is_helper_staff = False
-                for role in [admin_role, staff_role, officer_role]:
-                    if role and role in helper.roles:
-                        is_helper_staff = True
-                        break
-                
+                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles) or (officer_role and officer_role in helper.roles)
                 if not is_helper_staff:
                     new_overwrites[helper] = discord.PermissionOverwrite(
                         view_channel=False,
@@ -836,40 +823,27 @@ class TicketActionView(discord.ui.View):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
         
-        # Grant Staff/Admin/Officer Permissions including Management
         if admin_role:
-            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if staff_role:
-            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         if officer_role:
-            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_permissions=True)
+            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         
-        # Block requestor (UNLESS they are staff/admin/officer)
+        # Block requestor
         requestor = guild.get_member(ticket["requestor_id"])
         if requestor:
-            is_requestor_staff = False
-            for role in [admin_role, staff_role, officer_role]:
-                if role and role in requestor.roles:
-                    is_requestor_staff = True
-                    break
-            
-            if not is_requestor_staff:
-                new_overwrites[requestor] = discord.PermissionOverwrite(
-                    view_channel=False,
-                    send_messages=False,
-                    read_message_history=False
-                )
+            new_overwrites[requestor] = discord.PermissionOverwrite(
+                view_channel=False,
+                send_messages=False,
+                read_message_history=False
+            )
         
-        # Block helpers (except staff/admin/officer)
+        # Block helpers
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
-                is_helper_staff = False
-                for role in [admin_role, staff_role, officer_role]:
-                    if role and role in helper.roles:
-                        is_helper_staff = True
-                        break
-
+                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles) or (officer_role and officer_role in helper.roles)
                 if not is_helper_staff:
                     new_overwrites[helper] = discord.PermissionOverwrite(
                         view_channel=False,
@@ -1479,4 +1453,10 @@ async def setup_tickets(bot):
         rules_data = config.HARDCODED_COMMANDS.get("rrules", {})
         text = rules_data.get("text", "No requestor rules configured.")
         
-        embed = discord.
+        embed = discord.Embed(
+            title="📋 Requestor Rules",
+            description=text,
+            color=config.COLORS["WARNING"]
+        )
+        
+        await interaction.response.send_message(embed=embed)
