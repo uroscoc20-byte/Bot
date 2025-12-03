@@ -576,14 +576,14 @@ class TicketActionView(discord.ui.View):
                 selected_server=selected_server
             )
             
-            # Update the ticket message
+            # Update ticket message
             try:
                 msg = await interaction.channel.fetch_message(ticket["embed_message_id"])
                 await msg.edit(embed=embed)
             except Exception as e:
                 print(f"Failed to update embed: {e}")
             
-            # Generate join commands based on selected bosses IN ORDER
+            # Generate join commands for helper
             join_commands = generate_join_commands(
                 ticket["category"],
                 selected_bosses,
@@ -591,7 +591,7 @@ class TicketActionView(discord.ui.View):
                 selected_server
             )
             
-            # HELPERS GET ROOM INFO WHEN THEY JOIN (ephemeral message)
+            # Show room number to helper
             if join_commands:
                 await interaction.response.send_message(
                     f"✅ You've joined the ticket!\n\n"
@@ -665,27 +665,53 @@ class TicketActionView(discord.ui.View):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
         
+        # ADMIN/STAFF/OFFICER roles get full access + manage channels
         if admin_role:
-            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            new_overwrites[admin_role] = discord.PermissionOverwrite(
+                view_channel=True, 
+                send_messages=True, 
+                read_message_history=True,
+                manage_channels=True,
+                manage_permissions=True
+            )
         if staff_role:
-            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            new_overwrites[staff_role] = discord.PermissionOverwrite(
+                view_channel=True, 
+                send_messages=True, 
+                read_message_history=True,
+                manage_channels=True,
+                manage_permissions=True
+            )
         if officer_role:
-            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            new_overwrites[officer_role] = discord.PermissionOverwrite(
+                view_channel=True, 
+                send_messages=True, 
+                read_message_history=True
+            )
         
-        # Block requestor
+        # Block requestor UNLESS they are staff/officer/admin
         requestor = guild.get_member(ticket["requestor_id"])
         if requestor:
-            new_overwrites[requestor] = discord.PermissionOverwrite(
-                view_channel=False,
-                send_messages=False,
-                read_message_history=False
-            )
+            is_requestor_staff = (admin_role and admin_role in requestor.roles) or \
+                                 (staff_role and staff_role in requestor.roles) or \
+                                 (officer_role and officer_role in requestor.roles)
+            
+            if not is_requestor_staff:
+                # Regular requestor - block access
+                new_overwrites[requestor] = discord.PermissionOverwrite(
+                    view_channel=False,
+                    send_messages=False,
+                    read_message_history=False
+                )
+            # If requestor IS staff/officer/admin, they keep access via role permissions
         
         # Block helpers (except staff/admin/officer)
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
-                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles) or (officer_role and officer_role in helper.roles)
+                is_helper_staff = (admin_role and admin_role in helper.roles) or \
+                                  (staff_role and staff_role in helper.roles) or \
+                                  (officer_role and officer_role in helper.roles)
                 if not is_helper_staff:
                     new_overwrites[helper] = discord.PermissionOverwrite(
                         view_channel=False,
@@ -823,27 +849,53 @@ class TicketActionView(discord.ui.View):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
         
+        # ADMIN/STAFF/OFFICER roles get full access + manage channels
         if admin_role:
-            new_overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            new_overwrites[admin_role] = discord.PermissionOverwrite(
+                view_channel=True, 
+                send_messages=True, 
+                read_message_history=True,
+                manage_channels=True,
+                manage_permissions=True
+            )
         if staff_role:
-            new_overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            new_overwrites[staff_role] = discord.PermissionOverwrite(
+                view_channel=True, 
+                send_messages=True, 
+                read_message_history=True,
+                manage_channels=True,
+                manage_permissions=True
+            )
         if officer_role:
-            new_overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        
-        # Block requestor
-        requestor = guild.get_member(ticket["requestor_id"])
-        if requestor:
-            new_overwrites[requestor] = discord.PermissionOverwrite(
-                view_channel=False,
-                send_messages=False,
-                read_message_history=False
+            new_overwrites[officer_role] = discord.PermissionOverwrite(
+                view_channel=True, 
+                send_messages=True, 
+                read_message_history=True
             )
         
-        # Block helpers
+        # Block requestor UNLESS they are staff/officer/admin
+        requestor = guild.get_member(ticket["requestor_id"])
+        if requestor:
+            is_requestor_staff = (admin_role and admin_role in requestor.roles) or \
+                                 (staff_role and staff_role in requestor.roles) or \
+                                 (officer_role and officer_role in requestor.roles)
+            
+            if not is_requestor_staff:
+                # Regular requestor - block access
+                new_overwrites[requestor] = discord.PermissionOverwrite(
+                    view_channel=False,
+                    send_messages=False,
+                    read_message_history=False
+                )
+            # If requestor IS staff/officer/admin, they keep access via role permissions
+        
+        # Block helpers (except staff/admin/officer)
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
-                is_helper_staff = (admin_role and admin_role in helper.roles) or (staff_role and staff_role in helper.roles) or (officer_role and officer_role in helper.roles)
+                is_helper_staff = (admin_role and admin_role in helper.roles) or \
+                                  (staff_role and staff_role in helper.roles) or \
+                                  (officer_role and officer_role in helper.roles)
                 if not is_helper_staff:
                     new_overwrites[helper] = discord.PermissionOverwrite(
                         view_channel=False,
@@ -872,7 +924,6 @@ class TicketActionView(discord.ui.View):
         )
         cancelled_embed.add_field(name="Requestor", value=f"<@{ticket['requestor_id']}>", inline=False)
         cancelled_embed.add_field(name="Helpers", value=helpers_text, inline=False)
-        cancelled_embed.add_field(name="Points Awarded", value="**0** (Cancelled)", inline=True)
         cancelled_embed.set_footer(text=f"Cancelled by {interaction.user}")
         
         await interaction.channel.send(embed=cancelled_embed)
@@ -891,16 +942,32 @@ class TicketActionView(discord.ui.View):
         delete_view = DeleteChannelView()
         await interaction.followup.send(embed=delete_embed, view=delete_view, ephemeral=False)
         
-        # === DATABASE CLEANUP ===
+        # === DATABASE OPERATIONS ===
         try:
+            # Mark as closed (cancelled)
             ticket["is_closed"] = True
             await bot.db.save_ticket(ticket)
             
-            # Generate transcript
+            # Generate transcript (cancelled)
             try:
                 await generate_transcript(interaction.channel, bot, ticket, is_cancelled=True)
             except Exception as e:
                 print(f"⚠️ Transcript generation failed: {e}")
+            
+            # Save history
+            try:
+                await bot.db.save_ticket_history({
+                    "channel_id": ticket["channel_id"],
+                    "category": ticket["category"],
+                    "requestor_id": ticket["requestor_id"],
+                    "helpers": json.dumps(ticket["helpers"]),
+                    "points_per_helper": 0,
+                    "total_points_awarded": 0,
+                    "closed_by": interaction.user.id,
+                    "cancelled": True
+                })
+            except Exception as e:
+                print(f"⚠️ History save failed: {e}")
             
             # Delete from active
             try:
