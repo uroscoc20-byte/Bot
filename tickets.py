@@ -76,9 +76,23 @@ class TicketButton(discord.ui.Button):
             )
             return
         
-        # Check if user is a helper in any active ticket - PREVENT CREATING TICKET
         bot = interaction.client
         all_tickets = await bot.db.get_all_tickets()
+        
+        # === NEW: CHECK IF USER ALREADY HAS AN ACTIVE TICKET AS REQUESTOR ===
+        for ticket in all_tickets:
+            if interaction.user.id == ticket["requestor_id"]:
+                # Verify channel exists
+                channel = interaction.guild.get_channel(ticket["channel_id"])
+                if channel:
+                    await interaction.response.send_message(
+                        f"❌ You already have an active ticket: {channel.mention}\n"
+                        "Please close or cancel that ticket before creating a new one.",
+                        ephemeral=True
+                    )
+                    return
+        
+        # Check if user is a helper in any active ticket - PREVENT CREATING TICKET
         for ticket in all_tickets:
             if interaction.user.id in ticket["helpers"]:
                 # Verify channel exists
@@ -249,6 +263,21 @@ class TicketModal(discord.ui.Modal):
         """Create ticket channel when modal submitted"""
         await interaction.response.defer(ephemeral=True)
         
+        # === DOUBLE-CHECK: User doesn't have an active ticket ===
+        bot = interaction.client
+        all_tickets = await bot.db.get_all_tickets()
+        
+        for ticket in all_tickets:
+            if interaction.user.id == ticket["requestor_id"]:
+                channel = interaction.guild.get_channel(ticket["channel_id"])
+                if channel:
+                    await interaction.followup.send(
+                        f"❌ You already have an active ticket: {channel.mention}\n"
+                        "Please close or cancel that ticket before creating a new one.",
+                        ephemeral=True
+                    )
+                    return
+        
         guild = interaction.guild
         category_id = config.CHANNEL_IDS.get("TICKETS_CATEGORY")
         
@@ -355,7 +384,6 @@ class TicketModal(discord.ui.Modal):
             traceback.print_exc()
         
         # Save ticket to database
-        bot = interaction.client
         await bot.db.save_ticket({
             "channel_id": channel.id,
             "category": self.category,
