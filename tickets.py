@@ -10,16 +10,34 @@ import json
 import io
 import asyncio
 import traceback
+import time
 import config
 
 # === GLOBAL LOCK DICTIONARY FOR RACE CONDITION PREVENTION ===
 ticket_locks = {}
+
+# === COOLDOWN TRACKING ===
+join_cooldowns = {}  # {user_id: timestamp}
+leave_cooldowns = {}  # {user_id: timestamp}
+COOLDOWN_SECONDS = 120  # 2 minutes
 
 def get_ticket_lock(channel_id: int):
     """Get or create a lock for a specific ticket channel"""
     if channel_id not in ticket_locks:
         ticket_locks[channel_id] = asyncio.Lock()
     return ticket_locks[channel_id]
+
+def check_cooldown(user_id: int, cooldown_dict: dict) -> Optional[int]:
+    """Check if user is on cooldown. Returns remaining seconds or None if no cooldown"""
+    if user_id in cooldown_dict:
+        elapsed = time.time() - cooldown_dict[user_id]
+        if elapsed < COOLDOWN_SECONDS:
+            return int(COOLDOWN_SECONDS - elapsed)
+    return None
+
+def set_cooldown(user_id: int, cooldown_dict: dict):
+    """Set cooldown for user"""
+    cooldown_dict[user_id] = time.time()
 
 
 class TicketView(discord.ui.View):
@@ -310,7 +328,7 @@ class TicketModal(discord.ui.Modal):
             embed=embed,
             view=view
         )
-        
+       
         # PIN THE TICKET MESSAGE (with system message cleanup)
         try:
             await ticket_msg.pin(reason="Ticket embed auto-pinned for easy access")
@@ -363,22 +381,13 @@ class TicketModal(discord.ui.Modal):
 
 
 class TicketActionView(discord.ui.View):
-    """Action buttons for ticket (Join, Close, Cancel, Show Room Info, Kick)"""
+    """Action buttons for ticket (Join, Leave, Close, Cancel, Show Room Info)"""
     def __init__(self):
         super().__init__(timeout=None)
     
     @discord.ui.button(label="Show Room Info", style=discord.ButtonStyle.primary, emoji="🔢", custom_id="show_room_info_persistent", row=0)
     async def show_room_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Show room info - REQUESTOR/STAFF/ADMIN/OFFICER ONLY (NOT helpers)"""
-        # Check if user has RESTRICTED role - BLOCK THEM
-        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
-        if restricted_role and restricted_role in interaction.user.roles:
-            await interaction.response.send_message(
-                "❌ You are restricted from using ticket buttons.",
-                ephemeral=True
-            )
-            return
-        
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -430,14 +439,14 @@ class TicketActionView(discord.ui.View):
                 ephemeral=True
             )
     
-    @discord.ui.button(label="Kick Helper", style=discord.ButtonStyle.secondary, emoji="👢", custom_id="kick_helper_persistent", row=0)
-    async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Kick a helper from ticket - STAFF/ADMIN/OFFICER ONLY"""
-        # Check if user has RESTRICTED role - BLOCK THEM
-        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
-        if restricted_role and restricted_role in interaction.user.roles:
+    @discord.ui.button(label="Leave Ticket", style=discord.ButtonStyle.secondary, emoji="🚪", custom_id="leave_ticket_persistent", row=0)
+    async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Helper leaves ticket - WITH 120 SECOND COOLDOWN"""
+        # Check cooldown
+        remaining = check_cooldown(interaction.user.id, leave_cooldowns)
+        if remaining:
             await interaction.response.send_message(
-                "❌ You are restricted from using ticket buttons.",
+                f"⏳ You're on cooldown! Please wait **{remaining} seconds** before leaving another ticket.",
                 ephemeral=True
             )
             return
@@ -449,39 +458,78 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
             return
         
-        member = interaction.user
-        is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
-        
-        # Only staff/officer/admin can kick
-        if not is_staff:
-            await interaction.response.send_message("❌ Only staff, officers, or admins can kick helpers.", ephemeral=True)
+        if ticket.get("is_closed", False):
+            await interaction.response.send_message("❌ This ticket is already closed.", ephemeral=True)
             return
         
-        if not ticket["helpers"]:
-            await interaction.response.send_message("❌ No helpers to kick from this ticket.", ephemeral=True)
+        # Check if user is a helper
+        if interaction.user.id not in ticket["helpers"]:
+            await interaction.response.send_message("❌ You are not a helper in this ticket!", ephemeral=True)
             return
         
-        # Show modal to select which helper to kick
-        modal = KickHelperModal(ticket)
-        await interaction.response.send_modal(modal)
+        # Remove helper
+        ticket["helpers"].remove(interaction.user.id)
+        await bot.db.save_ticket(ticket)
+        
+        # Set cooldown
+        set_cooldown(interaction.user.id, leave_cooldowns)
+        
+        # Remove channel permissions
+        try:
+            await interaction.channel.set_permissions(interaction.user, overwrite=None)
+        except Exception as e:
+            print(f"Failed to remove permissions: {e}")
+        
+        # Update embed
+        try:
+            selected_bosses_raw = ticket.get("selected_bosses", "[]")
+            if isinstance(selected_bosses_raw, str):
+                selected_bosses = json.loads(selected_bosses_raw)
+            else:
+                selected_bosses = selected_bosses_raw or []
+        except:
+            selected_bosses = []
+        
+        selected_server = ticket.get("selected_server", "Unknown")
+        
+        embed = create_ticket_embed(
+            category=ticket["category"],
+            requestor_id=ticket["requestor_id"],
+            in_game_name=ticket.get("in_game_name", "N/A"),
+            concerns=ticket.get("concerns", "None"),
+            helpers=ticket["helpers"],
+            random_number=ticket["random_number"],
+            selected_bosses=selected_bosses,
+            selected_server=selected_server
+        )
+        
+        # Update ticket message
+        try:
+            msg = await interaction.channel.fetch_message(ticket["embed_message_id"])
+            await msg.edit(embed=embed)
+        except Exception as e:
+            print(f"Failed to update embed: {e}")
+        
+        await interaction.response.send_message(f"✅ You've left the ticket!", ephemeral=True)
+        await interaction.channel.send(f"🚪 {interaction.user.mention} left the ticket.")
     
     @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent", row=1)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Helper joins ticket - ONE TICKET AT A TIME - WITH RACE CONDITION PROTECTION"""
+        """Helper joins ticket - ONE TICKET AT A TIME - WITH RACE CONDITION PROTECTION AND 120 SECOND COOLDOWN"""
+        # Check cooldown FIRST
+        remaining = check_cooldown(interaction.user.id, join_cooldowns)
+        if remaining:
+            await interaction.response.send_message(
+                f"⏳ You're on cooldown! Please wait **{remaining} seconds** before joining another ticket.",
+                ephemeral=True
+            )
+            return
+        
         # === ACQUIRE LOCK TO PREVENT RACE CONDITIONS ===
         lock = get_ticket_lock(interaction.channel_id)
         
         async with lock:  # Only one person can execute this block at a time
             try:
-                # Check if user has RESTRICTED role - BLOCK THEM
-                restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
-                if restricted_role and restricted_role in interaction.user.roles:
-                    await interaction.response.send_message(
-                        "❌ You are restricted from using ticket buttons.",
-                        ephemeral=True
-                    )
-                    return
-                
                 bot = interaction.client
                 
                 # === FRESH DATABASE READ (CRITICAL FOR RACE CONDITION FIX) ===
@@ -558,17 +606,20 @@ class TicketActionView(discord.ui.View):
                     await interaction.response.send_message("❌ You need the Helper role to join tickets!", ephemeral=True)
                     return
                 
-                # === ADD HELPER TO TICKET (ATOMIC OPERATION) ===
+                # === SET COOLDOWN AFTER ALL CHECKS PASS ===
+                set_cooldown(interaction.user.id, join_cooldowns)
+                
+                # Add helper
                 ticket["helpers"].append(interaction.user.id)
                 await bot.db.save_ticket(ticket)
                 
-                print(f"✅ {interaction.user.name} successfully joined ticket {interaction.channel_id}")
-                
-                # Give channel permissions
-                try:
-                    await interaction.channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
-                except Exception as e:
-                    print(f"Failed to set permissions: {e}")
+                # Grant channel permissions
+                await interaction.channel.set_permissions(
+                    interaction.user,
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True
+                )
                 
                 # Update embed
                 try:
@@ -597,11 +648,10 @@ class TicketActionView(discord.ui.View):
                 try:
                     msg = await interaction.channel.fetch_message(ticket["embed_message_id"])
                     await msg.edit(embed=embed)
-                    print(f"✅ Updated embed for ticket {interaction.channel_id}")
                 except Exception as e:
                     print(f"Failed to update embed: {e}")
                 
-                # Generate join commands for helper
+                # Generate join commands
                 join_commands = generate_join_commands(
                     ticket["category"],
                     selected_bosses,
@@ -641,15 +691,6 @@ class TicketActionView(discord.ui.View):
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="ticket_close_persistent", row=1)
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Close ticket with rewards - STAFF/ADMIN/OFFICER/REQUESTOR"""
-        # Check if user has RESTRICTED role - BLOCK THEM
-        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
-        if restricted_role and restricted_role in interaction.user.roles:
-            await interaction.response.send_message(
-                "❌ You are restricted from using ticket buttons.",
-                ephemeral=True
-            )
-            return
-        
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -825,15 +866,6 @@ class TicketActionView(discord.ui.View):
     @discord.ui.button(label="Cancel Ticket", style=discord.ButtonStyle.secondary, emoji="❌", custom_id="ticket_cancel_persistent", row=1)
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Cancel ticket WITHOUT rewards - Requestor/Staff/Admin/Officer"""
-        # Check if user has RESTRICTED role - BLOCK THEM
-        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
-        if restricted_role and restricted_role in interaction.user.roles:
-            await interaction.response.send_message(
-                "❌ You are restricted from using ticket buttons.",
-                ephemeral=True
-            )
-            return
-        
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -996,91 +1028,6 @@ class TicketActionView(discord.ui.View):
         except Exception as e:
             print(f"⚠️ Database error during cancel: {e}")
             traceback.print_exc()
-
-
-class KickHelperModal(discord.ui.Modal):
-    """Modal to kick a helper from ticket"""
-    def __init__(self, ticket: dict):
-        super().__init__(title="Kick Helper")
-        self.ticket = ticket
-        
-        self.helper_mention = discord.ui.TextInput(
-            label="Helper to kick (mention or ID)",
-            placeholder="@username or user ID",
-            required=True,
-            max_length=100,
-            style=discord.TextStyle.short
-        )
-        self.add_item(self.helper_mention)
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        """Kick the specified helper"""
-        bot = interaction.client
-        
-        # Parse user mention or ID
-        helper_input = self.helper_mention.value.strip()
-        helper_id = None
-        
-        # Try to extract ID from mention
-        if helper_input.startswith("<@") and helper_input.endswith(">"):
-            helper_id = int(helper_input.replace("<@", "").replace("!", "").replace(">", ""))
-        else:
-            try:
-                helper_id = int(helper_input)
-            except:
-                await interaction.response.send_message("❌ Invalid user mention or ID.", ephemeral=True)
-                return
-        
-        # Check if helper is in ticket
-        if helper_id not in self.ticket["helpers"]:
-            await interaction.response.send_message("❌ This user is not a helper in this ticket.", ephemeral=True)
-            return
-        
-        # Remove helper
-        self.ticket["helpers"].remove(helper_id)
-        await bot.db.save_ticket(self.ticket)
-        
-        # Remove channel permissions
-        guild = interaction.guild
-        helper = guild.get_member(helper_id)
-        if helper:
-            try:
-                await interaction.channel.set_permissions(helper, overwrite=None)
-            except Exception as e:
-                print(f"Failed to remove permissions: {e}")
-        
-        # Update embed
-        try:
-            selected_bosses_raw = self.ticket.get("selected_bosses", "[]")
-            if isinstance(selected_bosses_raw, str):
-                selected_bosses = json.loads(selected_bosses_raw)
-            else:
-                selected_bosses = selected_bosses_raw or []
-        except:
-            selected_bosses = []
-        
-        selected_server = self.ticket.get("selected_server", "Unknown")
-        
-        embed = create_ticket_embed(
-            category=self.ticket["category"],
-            requestor_id=self.ticket["requestor_id"],
-            in_game_name=self.ticket.get("in_game_name", "N/A"),
-            concerns=self.ticket.get("concerns", "None"),
-            helpers=self.ticket["helpers"],
-            random_number=self.ticket["random_number"],
-            selected_bosses=selected_bosses,
-            selected_server=selected_server
-        )
-        
-        # Update ticket message
-        try:
-            msg = await interaction.channel.fetch_message(self.ticket["embed_message_id"])
-            await msg.edit(embed=embed)
-        except Exception as e:
-            print(f"Failed to update embed: {e}")
-        
-        await interaction.response.send_message(f"✅ Kicked <@{helper_id}> from the ticket.", ephemeral=False)
-        await interaction.channel.send(f"👢 <@{helper_id}> was kicked from the ticket by {interaction.user.mention}.")
 
 
 class DeleteChannelView(discord.ui.View):
@@ -1491,13 +1438,13 @@ async def setup_tickets(bot):
             except:
                 await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
     
-    @bot.tree.command(name="proof", description="Show proof submission guidelines")
+    @bot.tree.command(name="proof", description="Show proof submission guide")
     async def proof(interaction: discord.Interaction):
-        """Show proof guidelines with example image"""
+        """Show proof submission guide"""
         proof_data = config.HARDCODED_COMMANDS.get("proof", {})
+        text = proof_data.get("text", "No proof guide configured.")
         image = proof_data.get("image")
         
-        # Updated proof text
         text = (
             "# 📸 Submit Your Proof\n"
             "After requesting a ticket and completing the objective, make sure to provide proof!\n"
