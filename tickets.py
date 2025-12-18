@@ -415,7 +415,7 @@ class TicketActionView(discord.ui.View):
     
     @discord.ui.button(label="Show Room Info", style=discord.ButtonStyle.primary, emoji="🔢", custom_id="show_room_info_persistent", row=0)
     async def show_room_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Show room info - REQUESTOR/STAFF/ADMIN/OFFICER ONLY (NOT helpers)"""
+        """Show room info - REQUESTOR/STAFF/ADMIN/OFFICER/JOINED HELPERS"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -423,13 +423,14 @@ class TicketActionView(discord.ui.View):
             await interaction.response.send_message("❌ No active ticket found.", ephemeral=True)
             return
         
-        # Check permissions - ONLY staff/admin/officer or requestor (NOT helpers)
+        # Check permissions - ONLY staff/admin/officer or requestor or helpers who JOINED
         member = interaction.user
         is_staff = any(member.get_role(rid) for rid in [config.ROLE_IDS.get("ADMIN"), config.ROLE_IDS.get("STAFF"), config.ROLE_IDS.get("OFFICER")] if rid)
         is_requestor = interaction.user.id == ticket["requestor_id"]
+        is_helper_in_ticket = interaction.user.id in ticket["helpers"]
         
-        if not (is_staff or is_requestor):
-            await interaction.response.send_message("❌ Only the requestor, staff, officers, or admins can view room info.", ephemeral=True)
+        if not (is_staff or is_requestor or is_helper_in_ticket):
+            await interaction.response.send_message("❌ Only the requestor, helpers who joined this ticket, staff, officers, or admins can view room info.", ephemeral=True)
             return
         
         # Parse selected bosses
@@ -792,7 +793,7 @@ class TicketActionView(discord.ui.View):
                 )
             # If requestor IS staff/officer/admin, they keep access via role permissions
         
-        # Block helpers (except staff/admin/officer)
+        # Remove all helpers
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:
@@ -816,50 +817,40 @@ class TicketActionView(discord.ui.View):
         
         await interaction.channel.edit(overwrites=new_overwrites)
         
-        # === STEP 2: SEND CLOSED EMBED ===
+        # === STEP 2: CREATE FINAL EMBED ===
         helpers_text = ", ".join([f"<@{h}>" for h in ticket["helpers"]]) if ticket["helpers"] else "None"
-        points_per_helper = ticket.get("points", 0)
-        total_awarded = points_per_helper * len(ticket["helpers"])
         
-        closed_embed = discord.Embed(
-            title=f"🔒 {ticket['category']} (Closed)",
+        # Get points per helper
+        points_per = config.POINT_VALUES.get(ticket["category"], 0)
+        total_points = points_per * len(ticket["helpers"]) if ticket["helpers"] else 0
+        
+        final_embed = discord.Embed(
+            title=f"✅ {ticket['category']} (Completed)",
+            description="**Ticket Completed! Points awarded to all helpers.**",
             color=config.COLORS["SUCCESS"],
             timestamp=discord.utils.utcnow()
         )
-        closed_embed.add_field(name="Requestor", value=f"<@{ticket['requestor_id']}>", inline=False)
-        closed_embed.add_field(name="Helpers", value=helpers_text, inline=False)
-        closed_embed.add_field(name="Points per Helper", value=f"**{points_per_helper}**", inline=True)
-        closed_embed.add_field(name="Total Points Awarded", value=f"**{total_awarded}**", inline=True)
-        closed_embed.set_footer(text=f"Closed by {interaction.user}")
+        final_embed.add_field(name="Requestor", value=f"<@{ticket['requestor_id']}>", inline=False)
+        final_embed.add_field(name="Helpers", value=helpers_text, inline=False)
+        final_embed.add_field(name="Points per Helper", value=f"**{points_per}**", inline=True)
+        final_embed.add_field(name="Total Points Awarded", value=f"**{total_points}**", inline=True)
+        final_embed.set_footer(text=f"Closed by {interaction.user}")
         
-        await interaction.channel.send(embed=closed_embed)
+        await interaction.channel.send(embed=final_embed)
         
-        # === STEP 3: SEND DELETE BUTTON ===
-        delete_embed = discord.Embed(
-            title="🗑️ Delete Channel?",
-            description=(
-                "This ticket has been closed.\n\n"
-                "Click the button below to delete this channel.\n"
-                "Only staff can delete the channel."
-            ),
-            color=config.COLORS["DANGER"]
-        )
-        
-        delete_view = DeleteChannelView()
-        await interaction.followup.send(embed=delete_embed, view=delete_view, ephemeral=False)
+        # === STEP 3: AWARD POINTS ===
+        for helper_id in ticket["helpers"]:
+            try:
+                new_points = await bot.db.add_points(helper_id, points_per)
+                print(f"✅ Awarded {points_per} points to {helper_id} (Total: {new_points})")
+            except Exception as e:
+                print(f"⚠️ Failed to award points to {helper_id}: {e}")
         
         # === STEP 4: DATABASE OPERATIONS ===
         try:
             # Mark as closed
             ticket["is_closed"] = True
             await bot.db.save_ticket(ticket)
-            
-            # Award points
-            for helper_id in ticket["helpers"]:
-                try:
-                    await bot.db.add_points(helper_id, points_per_helper)
-                except Exception as e:
-                    print(f"⚠️ Failed to award points to {helper_id}: {e}")
             
             # Generate transcript
             try:
@@ -874,8 +865,8 @@ class TicketActionView(discord.ui.View):
                     "category": ticket["category"],
                     "requestor_id": ticket["requestor_id"],
                     "helpers": json.dumps(ticket["helpers"]),
-                    "points_per_helper": points_per_helper,
-                    "total_points_awarded": total_awarded,
+                    "points_per_helper": points_per,
+                    "total_points_awarded": total_points,
                     "closed_by": interaction.user.id
                 })
             except Exception as e:
@@ -890,10 +881,24 @@ class TicketActionView(discord.ui.View):
         except Exception as e:
             print(f"⚠️ Database error during close: {e}")
             traceback.print_exc()
+        
+        # === SEND DELETE BUTTON ===
+        delete_embed = discord.Embed(
+            title="🗑️ Delete Channel?",
+            description=(
+                "This ticket has been closed.\n\n"
+                "Click the button below to delete this channel.\n"
+                "Only staff can delete the channel."
+            ),
+            color=config.COLORS["SUCCESS"]
+        )
+        
+        delete_view = DeleteChannelView()
+        await interaction.followup.send(embed=delete_embed, view=delete_view, ephemeral=False)
     
     @discord.ui.button(label="Cancel Ticket", style=discord.ButtonStyle.secondary, emoji="❌", custom_id="ticket_cancel_persistent", row=1)
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Cancel ticket WITHOUT rewards - Requestor/Staff/Admin/Officer"""
+        """Cancel ticket - STAFF/ADMIN/OFFICER/REQUESTOR"""
         bot = interaction.client
         ticket = await bot.db.get_ticket(interaction.channel_id)
         
@@ -921,7 +926,7 @@ class TicketActionView(discord.ui.View):
         officer_role = guild.get_role(config.ROLE_IDS.get("OFFICER"))
         helper_role = guild.get_role(config.ROLE_IDS.get("HELPER"))
         
-        # === REMOVE PERMISSIONS ===
+        # === STEP 1: REMOVE PERMISSIONS IMMEDIATELY ===
         new_overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
@@ -967,7 +972,7 @@ class TicketActionView(discord.ui.View):
                 )
             # If requestor IS staff/officer/admin, they keep access via role permissions
         
-        # Block helpers (except staff/admin/officer)
+        # Remove all helpers
         for helper_id in ticket["helpers"]:
             helper = guild.get_member(helper_id)
             if helper:

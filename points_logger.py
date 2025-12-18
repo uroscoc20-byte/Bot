@@ -6,7 +6,7 @@ from discord import app_commands
 import config
 from datetime import datetime
 
-LOG_CHANNEL_ID = 1356299864216047636
+LOG_CHANNEL_ID = 1451319266941997279
 
 
 async def get_leaderboard_preview(bot, limit: int = 10) -> str:
