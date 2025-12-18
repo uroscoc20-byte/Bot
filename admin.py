@@ -6,6 +6,7 @@ from discord.ext import commands
 from discord import app_commands
 import config
 import json
+from logging import log_points_added, log_points_removed, log_points_set, log_points_reset, log_user_deleted
 
 
 def is_admin_or_staff(interaction: discord.Interaction) -> bool:
@@ -55,6 +56,9 @@ class ConfirmResetView(discord.ui.View):
         embed.set_footer(text=f"Reset by {interaction.user}")
         
         await interaction.response.edit_message(embed=embed, view=None)
+        
+        # Log the reset
+        await log_points_reset(self.bot, interaction.user.id)
         
         # Disable all buttons
         self.stop()
@@ -111,6 +115,9 @@ async def setup_admin(bot):
         embed.set_footer(text=f"Modified by {interaction.user}")
         
         await interaction.response.send_message(embed=embed)
+        
+        # Log the change
+        await log_points_added(bot, user.id, interaction.user.id, amount, new_points)
     
     @bot.tree.command(name="points_remove", description="Remove points from a user (Admin only)")
     @app_commands.describe(
@@ -143,6 +150,9 @@ async def setup_admin(bot):
         embed.set_footer(text=f"Modified by {interaction.user}")
         
         await interaction.response.send_message(embed=embed)
+        
+        # Log the change
+        await log_points_removed(bot, user.id, interaction.user.id, actual_removed, new_points)
     
     @bot.tree.command(name="points_set", description="Set user's points to exact value (Admin only)")
     @app_commands.describe(
@@ -172,6 +182,9 @@ async def setup_admin(bot):
         embed.set_footer(text=f"Modified by {interaction.user}")
         
         await interaction.response.send_message(embed=embed)
+        
+        # Log the change
+        await log_points_set(bot, user.id, interaction.user.id, amount)
     
     @bot.tree.command(name="points_reset", description="Reset all points (Admin only)")
     async def points_reset(interaction: discord.Interaction):
@@ -198,10 +211,10 @@ async def setup_admin(bot):
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @bot.tree.command(name="points_remove_user", description="Remove a user from the leaderboard (Admin only)")
-    @app_commands.describe(user="User to remove from leaderboard")
-    async def points_remove_user(interaction: discord.Interaction, user: discord.Member):
-        """Remove user from leaderboard entirely"""
+    @bot.tree.command(name="points_remove_user", description="Remove a user from the leaderboard by ID or mention (Admin only)")
+    @app_commands.describe(user_id="User ID or mention to remove from leaderboard")
+    async def points_remove_user(interaction: discord.Interaction, user_id: str):
+        """Remove user from leaderboard entirely - supports ID or mention"""
         if not is_admin_or_staff(interaction):
             await interaction.response.send_message(
                 "❌ You don't have permission to use this command.",
@@ -209,18 +222,35 @@ async def setup_admin(bot):
             )
             return
         
-        deleted = await bot.db.delete_user_points(user.id)
+        # Parse user_id - handle mentions and raw IDs
+        try:
+            # If it's a mention like <@123456>, extract the ID
+            if user_id.startswith("<@") and user_id.endswith(">"):
+                parsed_id = int(user_id[2:-1].replace("!", ""))
+            else:
+                parsed_id = int(user_id)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Invalid user ID. Please provide a valid user ID or mention.",
+                ephemeral=True
+            )
+            return
+        
+        deleted = await bot.db.delete_user_points(parsed_id)
         
         if deleted:
             embed = discord.Embed(
                 title="✅ User Removed",
-                description=f"Removed {user.mention} from the leaderboard",
+                description=f"Removed user (ID: {parsed_id}) from the leaderboard",
                 color=config.COLORS["SUCCESS"]
             )
+            
+            # Log the removal
+            await log_user_deleted(bot, parsed_id, interaction.user.id)
         else:
             embed = discord.Embed(
                 title="ℹ️ User Not Found",
-                description=f"{user.mention} was not in the leaderboard",
+                description=f"User (ID: {parsed_id}) was not in the leaderboard",
                 color=config.COLORS["WARNING"]
             )
         
