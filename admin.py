@@ -6,7 +6,7 @@ from discord.ext import commands
 from discord import app_commands
 import config
 import json
-from logging import log_points_added, log_points_removed, log_points_set, log_points_reset, log_user_deleted
+from points_logger import log_points_added, log_points_removed, log_points_set, log_points_reset, log_user_deleted
 
 
 def is_admin_or_staff(interaction: discord.Interaction) -> bool:
