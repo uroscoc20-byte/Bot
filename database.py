@@ -201,12 +201,14 @@ class Database:
             return 0
         
         try:
+            # Using datetime('now') in SQLite (UTC)
             async with self.db.execute(
                 "SELECT COUNT(*) FROM ticket_history WHERE closed_at > datetime('now', '-24 hours')"
             ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
-        except Exception:
+        except Exception as e:
+            print(f"⚠️ Error getting 24h stats: {e}")
             return 0
 
     # ---------- ROLES ----------
@@ -580,20 +582,39 @@ class Database:
             except Exception as e:
                 await self._fallback_to_sqlite(str(e))
         
-        await self.db.execute("""
-            INSERT INTO ticket_history 
-            (channel_id, category, requestor_id, helpers, points_per_helper, 
-             total_points_awarded, closed_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            history_data["channel_id"],
-            history_data["category"],
-            history_data["requestor_id"],
-            history_data["helpers"],
-            history_data["points_per_helper"],
-            history_data["total_points_awarded"],
-            history_data["closed_by"]
-        ))
+        # Check if closed_at is explicitly provided, otherwise let SQLite use default
+        if "closed_at" in history_data:
+            await self.db.execute("""
+                INSERT INTO ticket_history 
+                (channel_id, category, requestor_id, helpers, points_per_helper, 
+                 total_points_awarded, closed_by, closed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                history_data["channel_id"],
+                history_data["category"],
+                history_data["requestor_id"],
+                history_data["helpers"],
+                history_data["points_per_helper"],
+                history_data["total_points_awarded"],
+                history_data["closed_by"],
+                history_data["closed_at"]
+            ))
+        else:
+            await self.db.execute("""
+                INSERT INTO ticket_history 
+                (channel_id, category, requestor_id, helpers, points_per_helper, 
+                 total_points_awarded, closed_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                history_data["channel_id"],
+                history_data["category"],
+                history_data["requestor_id"],
+                history_data["helpers"],
+                history_data["points_per_helper"],
+                history_data["total_points_awarded"],
+                history_data["closed_by"]
+            ))
+            
         await self.db.commit()
 
     async def get_ticket(self, channel_id):

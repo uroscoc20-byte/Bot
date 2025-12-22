@@ -7,6 +7,7 @@ from discord import app_commands
 import config
 import json
 from points_logger import log_points_added, log_points_removed, log_points_set, log_points_reset, log_user_deleted
+from tickets import join_cooldowns, leave_cooldowns
 
 
 def is_admin_or_staff(interaction: discord.Interaction) -> bool:
@@ -348,3 +349,34 @@ async def setup_admin(bot):
         )
         
         await interaction.channel.send(f"👢 {user.mention} was kicked from the ticket by {interaction.user.mention}.")
+
+    @bot.tree.command(name="remove_cooldown", description="Remove cooldown from a user (Admin/Staff only)")
+    @app_commands.describe(user="User to remove cooldown from")
+    async def remove_cooldown(interaction: discord.Interaction, user: discord.Member):
+        """Remove join/leave cooldown from a user"""
+        if not is_admin_or_staff(interaction):
+            await interaction.response.send_message(
+                "❌ You don't have permission to use this command.",
+                ephemeral=True
+            )
+            return
+
+        removed = False
+        if user.id in join_cooldowns:
+            del join_cooldowns[user.id]
+            removed = True
+        
+        if user.id in leave_cooldowns:
+            del leave_cooldowns[user.id]
+            removed = True
+            
+        if removed:
+            await interaction.response.send_message(
+                f"✅ Removed ticket cooldowns for {user.mention}.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"ℹ️ {user.mention} has no active cooldowns.",
+                ephemeral=True
+            )
