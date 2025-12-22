@@ -200,11 +200,14 @@ class Database:
         if self.backend != "sqlite":
             return 0
         
-        async with self.db.execute(
-            "SELECT COUNT(*) FROM ticket_history WHERE closed_at > datetime('now', '-24 hours')"
-        ) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else 0
+        try:
+            async with self.db.execute(
+                "SELECT COUNT(*) FROM ticket_history WHERE closed_at > datetime('now', '-24 hours')"
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+        except Exception:
+            return 0
 
     # ---------- ROLES ----------
     async def set_roles(self, admin, staff, helper, restricted_ids):
@@ -564,6 +567,32 @@ class Database:
             selected_bosses_json,
             ticket_data.get("selected_server", "Unknown"),
             ticket_data.get("is_closed", False)
+        ))
+        await self.db.commit()
+
+    async def save_ticket_history(self, history_data):
+        """Save ticket history"""
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("ticket_history").add(history_data)
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        
+        await self.db.execute("""
+            INSERT INTO ticket_history 
+            (channel_id, category, requestor_id, helpers, points_per_helper, 
+             total_points_awarded, closed_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            history_data["channel_id"],
+            history_data["category"],
+            history_data["requestor_id"],
+            history_data["helpers"],
+            history_data["points_per_helper"],
+            history_data["total_points_awarded"],
+            history_data["closed_by"]
         ))
         await self.db.commit()
 
