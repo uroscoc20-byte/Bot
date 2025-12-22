@@ -176,6 +176,25 @@ class Database:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, func)
 
+    # ---------- STATS ----------
+    async def get_total_tickets(self):
+        """Get total number of tickets (starts at 15114)"""
+        START_VALUE = 15114
+        
+        data = await self.load_config("total_tickets_counter")
+        try:
+            val = int(data)
+            return max(val, START_VALUE)
+        except:
+            return START_VALUE
+
+    async def increment_total_tickets(self):
+        """Increment the total ticket counter by 1"""
+        current = await self.get_total_tickets()
+        new_val = current + 1
+        await self.save_config("total_tickets_counter", str(new_val))
+        return new_val
+
     # ---------- ROLES ----------
     async def set_roles(self, admin, staff, helper, restricted_ids):
         roles_data = {"admin": admin, "staff": staff, "helper": helper, "restricted": restricted_ids}

@@ -852,6 +852,13 @@ class TicketActionView(discord.ui.View):
             ticket["is_closed"] = True
             await bot.db.save_ticket(ticket)
             
+            # === NEW: INCREMENT TOTAL TICKETS COUNTER ===
+            try:
+                await bot.db.increment_total_tickets()
+                print(f"✅ Incremented total tickets counter")
+            except Exception as e:
+                print(f"⚠️ Failed to increment total tickets: {e}")
+            
             # Generate transcript
             try:
                 await generate_transcript(interaction.channel, bot, ticket)

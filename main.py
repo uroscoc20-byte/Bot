@@ -31,9 +31,9 @@ intents.members = True
 intents.guilds = True
 
 bot = commands.Bot(
-    command_prefix="!",  # Prefix for text commands (mainly using slash commands)
+    command_prefix="!",
     intents=intents,
-    help_command=None,  # We'll create custom help
+    help_command=None,
 )
 
 # Initialize database
@@ -72,6 +72,8 @@ async def on_ready():
     from verification import setup_verification
     from leaderboard import setup_leaderboard
     from admin import setup_admin
+    from stats import setup_stats
+    from dumb_things import setup_dumb_things
     
     await setup_tickets(bot)
     print("✅ Ticket system loaded")
@@ -84,6 +86,12 @@ async def on_ready():
     
     await setup_admin(bot)
     print("✅ Admin system loaded")
+    
+    await setup_stats(bot)
+    print("✅ Stats system loaded")
+    
+    await setup_dumb_things(bot)
+    print("✅ Dumb things system loaded")
     
     # Sync slash commands
     try:

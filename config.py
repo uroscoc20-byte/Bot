@@ -8,9 +8,10 @@
 ROLE_IDS = {
     "ADMIN": 1345073680610496602,      # Admin role ID
     "STAFF": 1374821509268373686,      # Staff role ID
-    "OFFICER": 1445116463253033053,    # Officer role ID (NEW!)
+    "OFFICER": 1445116463253033053,    # Officer role ID
     "HELPER": 1368925578895429654,     # Helper role ID
-    "RESTRICTED": 1405930080256921732, # Restricted role - can't open tickets or use buttons (NEW!)
+    "RESTRICTED": 1405930080256921732, # Restricted role - can't open tickets
+    "VOLUNTEER": 1452737828873306323,  # Volunteer role - gets NO points
 }
 
 # ============================================================================
@@ -27,7 +28,7 @@ CHANNEL_IDS = {
 # ============================================================================
 # CUSTOM EMOJI - Your server's custom emoji
 # ============================================================================
-CUSTOM_EMOJI = "<:URE:1429522388395233331>"  # Replace with your custom emoji
+CUSTOM_EMOJI = "<:URE:1429522388395233331>"
 
 # ============================================================================
 # TICKET CATEGORIES - Define your ticket types
@@ -75,12 +76,12 @@ CATEGORY_METADATA = {
 }
 
 # ============================================================================
-# HELPER SLOTS - Maximum helpers per category (UPDATED!)
+# HELPER SLOTS - Maximum helpers per category
 # ============================================================================
 HELPER_SLOTS = {
     "GrimChallenge Express": 6,
     "Daily 7-Man Express": 6,
-    "Weekly Ultra Express": 3,        # CHANGED FROM 6 TO 3!
+    "Weekly Ultra Express": 3,
     "UltraSpeaker Express": 3,
     "Ultra Gramiel Express": 3,
     "Daily 4-Man Express": 3,
@@ -101,9 +102,8 @@ POINT_VALUES = {
 }
 
 # ============================================================================
-# BOSS LISTS - For generating /join commands (UPDATED ORDER!)
+# BOSS LISTS - For generating /join commands
 # ============================================================================
-# 4-Man Order: Dage, Tyndarius, Engineer, Warden, Ezrajal
 DAILY_4MAN_BOSSES = [
     "Ultra Dage",
     "Ultra Tyndarius",
@@ -112,7 +112,6 @@ DAILY_4MAN_BOSSES = [
     "Ultra Ezrajal",
 ]
 
-# 7-Man Order: Lich, Beast, Deimos, Flibbi, Bane, Xyfrag, Kathool, Astral, Azalith
 DAILY_7MAN_BOSSES = [
     "Ultra Lich",
     "Ultra Beast",
@@ -125,9 +124,8 @@ DAILY_7MAN_BOSSES = [
     "Ultra Azalith",
 ]
 
-# Boss-specific join commands for 7-Man (Lich = frozenlair!)
 BOSS_7MAN_COMMANDS = {
-    "Ultra Lich": ["frozenlair"],     # UPDATED!
+    "Ultra Lich": ["frozenlair"],
     "Ultra Beast": ["Beast"],
     "Ultra Deimos": ["Deimos"],
     "Ultra Flibbi": ["Flibbi"],
@@ -138,7 +136,6 @@ BOSS_7MAN_COMMANDS = {
     "Ultra Azalith": ["Azalith"],
 }
 
-# Weekly Order: Dage > Nulgath > Drago > Darkon > CDrakath
 WEEKLY_ULTRA_BOSSES = [
     "Ultra Dage",
     "Ultra Nulgath",
@@ -151,11 +148,11 @@ WEEKLY_ULTRA_BOSSES = [
 # COLORS - Embed colors (Discord color codes)
 # ============================================================================
 COLORS = {
-    "PRIMARY": 0x5865F2,    # Discord Blurple
-    "SUCCESS": 0x57F287,    # Green
-    "WARNING": 0xFEE75C,    # Yellow
-    "DANGER": 0xED4245,     # Red
-    "GOLD": 0xFFD700,       # Gold for leaderboard
+    "PRIMARY": 0x5865F2,
+    "SUCCESS": 0x57F287,
+    "WARNING": 0xFEE75C,
+    "DANGER": 0xED4245,
+    "GOLD": 0xFFD700,
 }
 
 # ============================================================================
@@ -225,5 +222,5 @@ HARDCODED_COMMANDS = {
 # ============================================================================
 # BOT SETTINGS
 # ============================================================================
-DEFAULT_PREFIX = "!"  # Command prefix (if using text commands)
-LEADERBOARD_PER_PAGE = 10  # Number of entries per leaderboard page
+DEFAULT_PREFIX = "!"
+LEADERBOARD_PER_PAGE = 10
