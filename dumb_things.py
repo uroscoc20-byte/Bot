@@ -21,24 +21,30 @@ async def setup_dumb_things(bot):
         if result == sides:
             emoji = "🎯"  # Perfect roll
             text = "**CRITICAL HIT!**"
+            color = 0xFFD700  # Gold
         elif result == 1:
             emoji = "💀"  # Worst roll
             text = "**CRITICAL FAIL!**"
+            color = 0xED4245  # Red
         elif result > sides * 0.75:
             emoji = "🔥"  # Great roll
-            text = "**Great roll!**"
+            text = "**Excellent Roll!**"
+            color = 0xFF6B35  # Orange
         else:
             emoji = "🎲"  # Normal roll
-            text = "**Roll result:**"
+            text = "**Roll Result**"
+            color = config.COLORS["PRIMARY"]
         
         embed = discord.Embed(
-            title=f"{emoji} Dice Roll {emoji}",
-            description=(
-                f"{text}\n\n"
-                f"**Result:** `{result}` / `{sides}`"
-            ),
-            color=config.COLORS["PRIMARY"]
+            title=f"{emoji} Dice Roll",
+            description=text,
+            color=color
         )
-        embed.set_footer(text=f"Rolled by {interaction.user.name}")
+        embed.add_field(
+            name="Result",
+            value=f"```{result}```",
+            inline=False
+        )
+        embed.set_footer(text=f"Rolled by {interaction.user.name} • Max: {sides}")
         
         await interaction.response.send_message(embed=embed)
