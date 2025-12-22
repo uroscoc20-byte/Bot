@@ -15,14 +15,15 @@ async def setup_stats(bot):
     async def stats(interaction: discord.Interaction):
         """Show total tickets completed"""
         total = await bot.db.get_total_tickets()
+        tickets_24h = await bot.db.get_tickets_last_24h()
         
         # Calculate days since April 9, 2025 to today
         start_date = datetime(2025, 4, 9)
         today = datetime.now()
         days_elapsed = (today - start_date).days
         
-        # Calculate average per day
-        avg_per_day = round(total / days_elapsed, 1) if days_elapsed > 0 else 0
+        # Calculate overall average per day
+        overall_avg = round(total / days_elapsed, 1) if days_elapsed > 0 else 0
         
         embed = discord.Embed(
             title="📊 Server Statistics",
@@ -34,14 +35,15 @@ async def setup_stats(bot):
             value=f"**{total:,}**",
             inline=False
         )
+        
         embed.add_field(
             name="Daily Average",
-            value=f"**{avg_per_day:,}**",
+            value=f"**{overall_avg:,}**",
             inline=True
         )
         embed.add_field(
-            name="Days Tracked",
-            value=f"**{days_elapsed}**",
+            name="Last 24 Hours",
+            value=f"**{tickets_24h:,}**",
             inline=True
         )
         

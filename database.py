@@ -195,6 +195,17 @@ class Database:
         await self.save_config("total_tickets_counter", str(new_val))
         return new_val
 
+    async def get_tickets_last_24h(self):
+        """Get total tickets completed in last 24 hours"""
+        if self.backend != "sqlite":
+            return 0
+        
+        async with self.db.execute(
+            "SELECT COUNT(*) FROM ticket_history WHERE closed_at > datetime('now', '-24 hours')"
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
     # ---------- ROLES ----------
     async def set_roles(self, admin, staff, helper, restricted_ids):
         roles_data = {"admin": admin, "staff": staff, "helper": helper, "restricted": restricted_ids}
