@@ -582,39 +582,33 @@ class Database:
             except Exception as e:
                 await self._fallback_to_sqlite(str(e))
         
-        # Check if closed_at is explicitly provided, otherwise let SQLite use default
-        if "closed_at" in history_data:
-            await self.db.execute("""
-                INSERT INTO ticket_history 
-                (channel_id, category, requestor_id, helpers, points_per_helper, 
-                 total_points_awarded, closed_by, closed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                history_data["channel_id"],
-                history_data["category"],
-                history_data["requestor_id"],
-                history_data["helpers"],
-                history_data["points_per_helper"],
-                history_data["total_points_awarded"],
-                history_data["closed_by"],
-                history_data["closed_at"]
-            ))
-        else:
-            await self.db.execute("""
-                INSERT INTO ticket_history 
-                (channel_id, category, requestor_id, helpers, points_per_helper, 
-                 total_points_awarded, closed_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                history_data["channel_id"],
-                history_data["category"],
-                history_data["requestor_id"],
-                history_data["helpers"],
-                history_data["points_per_helper"],
-                history_data["total_points_awarded"],
-                history_data["closed_by"]
-            ))
-            
+        await self.db.execute("""
+            INSERT INTO ticket_history 
+            (channel_id, category, requestor_id, helpers, points_per_helper, 
+             total_points_awarded, closed_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            history_data["channel_id"],
+            history_data["category"],
+            history_data["requestor_id"],
+            history_data["helpers"],
+            history_data["points_per_helper"],
+            history_data["total_points_awarded"],
+            history_data["closed_by"]
+        ))
+        await self.db.commit()
+
+    async def delete_ticket(self, channel_id):
+        """Delete ticket from active"""
+        if self.backend == "firestore":
+            try:
+                def _op():
+                    self.fs.collection("active_tickets").document(str(channel_id)).delete()
+                return await self._fs_run(_op)
+            except Exception as e:
+                await self._fallback_to_sqlite(str(e))
+        
+        await self.db.execute("DELETE FROM active_tickets WHERE channel_id = ?", (channel_id,))
         await self.db.commit()
 
     async def get_ticket(self, channel_id):
@@ -623,34 +617,49 @@ class Database:
             try:
                 def _op():
                     snap = self.fs.collection("active_tickets").document(str(channel_id)).get()
-                    return snap.to_dict() if snap.exists else None
+                    if snap.exists:
+                        data = snap.to_dict()
+                        # Ensure helpers is list
+                        if isinstance(data.get("helpers"), str):
+                            try:
+                                data["helpers"] = json.loads(data["helpers"])
+                            except:
+                                data["helpers"] = []
+                        return data
+                    return None
                 return await self._fs_run(_op)
             except Exception as e:
                 await self._fallback_to_sqlite(str(e))
         
         async with self.db.execute("""
-            SELECT channel_id, category, requestor_id, helpers, points, random_number,
-                   proof_submitted, proof, embed_message_id, in_game_name, concerns,
+            SELECT channel_id, category, requestor_id, helpers, points, random_number, 
+                   proof_submitted, proof, embed_message_id, in_game_name, concerns, 
                    selected_bosses, selected_server, is_closed
             FROM active_tickets WHERE channel_id = ?
         """, (channel_id,)) as cursor:
             row = await cursor.fetchone()
             if row:
+                helpers = []
+                try:
+                    helpers = json.loads(row[3])
+                except:
+                    pass
+                    
                 return {
                     "channel_id": row[0],
                     "category": row[1],
                     "requestor_id": row[2],
-                    "helpers": json.loads(row[3]),
+                    "helpers": helpers,
                     "points": row[4],
                     "random_number": row[5],
-                    "proof_submitted": row[6],
+                    "proof_submitted": bool(row[6]),
                     "proof": row[7],
                     "embed_message_id": row[8],
                     "in_game_name": row[9],
                     "concerns": row[10],
                     "selected_bosses": row[11],
                     "selected_server": row[12],
-                    "is_closed": row[13]
+                    "is_closed": bool(row[13])
                 }
             return None
 
@@ -659,48 +668,50 @@ class Database:
         if self.backend == "firestore":
             try:
                 def _op():
-                    docs = self.fs.collection("active_tickets").where("is_closed", "==", False).stream()
-                    return [d.to_dict() for d in docs]
+                    docs = self.fs.collection("active_tickets").stream()
+                    tickets = []
+                    for d in docs:
+                        data = d.to_dict()
+                        if isinstance(data.get("helpers"), str):
+                            try:
+                                data["helpers"] = json.loads(data["helpers"])
+                            except:
+                                data["helpers"] = []
+                        tickets.append(data)
+                    return tickets
                 return await self._fs_run(_op)
             except Exception as e:
                 await self._fallback_to_sqlite(str(e))
         
         async with self.db.execute("""
-            SELECT channel_id, category, requestor_id, helpers, points, random_number,
-                   proof_submitted, proof, embed_message_id, in_game_name, concerns,
+            SELECT channel_id, category, requestor_id, helpers, points, random_number, 
+                   proof_submitted, proof, embed_message_id, in_game_name, concerns, 
                    selected_bosses, selected_server, is_closed
-            FROM active_tickets WHERE is_closed = 0
+            FROM active_tickets
         """) as cursor:
             rows = await cursor.fetchall()
-            return [{
-                "channel_id": r[0],
-                "category": r[1],
-                "requestor_id": r[2],
-                "helpers": json.loads(r[3]),
-                "points": r[4],
-                "random_number": r[5],
-                "proof_submitted": r[6],
-                "proof": r[7],
-                "embed_message_id": r[8],
-                "in_game_name": r[9],
-                "concerns": r[10],
-                "selected_bosses": r[11],
-                "selected_server": r[12],
-                "is_closed": r[13]
-            } for r in rows]
-
-    async def delete_ticket(self, channel_id):
-        """Delete a ticket"""
-        if self.backend == "firestore":
-            try:
-                def _op():
-                    self.fs.collection("active_tickets").document(str(channel_id)).delete()
-                    return True
-                await self._fs_run(_op)
-                return True
-            except Exception as e:
-                await self._fallback_to_sqlite(str(e))
-        
-        cursor = await self.db.execute("DELETE FROM active_tickets WHERE channel_id = ?", (channel_id,))
-        await self.db.commit()
-        return cursor.rowcount > 0
+            tickets = []
+            for row in rows:
+                helpers = []
+                try:
+                    helpers = json.loads(row[3])
+                except:
+                    pass
+                
+                tickets.append({
+                    "channel_id": row[0],
+                    "category": row[1],
+                    "requestor_id": row[2],
+                    "helpers": helpers,
+                    "points": row[4],
+                    "random_number": row[5],
+                    "proof_submitted": bool(row[6]),
+                    "proof": row[7],
+                    "embed_message_id": row[8],
+                    "in_game_name": row[9],
+                    "concerns": row[10],
+                    "selected_bosses": row[11],
+                    "selected_server": row[12],
+                    "is_closed": bool(row[13])
+                })
+            return tickets

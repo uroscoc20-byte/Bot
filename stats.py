@@ -41,11 +41,6 @@ async def setup_stats(bot):
             value=f"**{overall_avg:,}**",
             inline=True
         )
-        embed.add_field(
-            name="Last 24 Hours",
-            value=f"**{tickets_24h:,}**",
-            inline=True
-        )
         
         embed.set_footer(text="Tracking since April 9, 2025")
         

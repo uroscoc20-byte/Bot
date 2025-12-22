@@ -839,8 +839,16 @@ class TicketActionView(discord.ui.View):
         await interaction.channel.send(embed=final_embed)
         
         # === STEP 3: AWARD POINTS ===
+        volunteer_role = guild.get_role(config.ROLE_IDS.get("VOLUNTEER"))
+
         for helper_id in ticket["helpers"]:
             try:
+                # Check for volunteer role
+                helper_member = guild.get_member(helper_id)
+                if helper_member and volunteer_role and volunteer_role in helper_member.roles:
+                     print(f"ℹ️ {helper_member.name} is a Volunteer - Skipping points.")
+                     continue
+
                 new_points = await bot.db.add_points(helper_id, points_per)
                 print(f"✅ Awarded {points_per} points to {helper_id} (Total: {new_points})")
             except Exception as e:
