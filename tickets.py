@@ -290,8 +290,8 @@ class TicketModal(discord.ui.Modal):
             await interaction.followup.send("❌ Ticket category not found!", ephemeral=True)
             return
         
-        # Generate random number for ticket (10000-99999)
-        random_number = random.randint(10000, 99999)
+        # Generate random number for ticket (1000-99999)
+        random_number = random.randint(1000, 99999)
         
         # Get channel prefix
         prefix = config.CATEGORY_METADATA.get(self.category, {}).get("prefix", "ticket")
