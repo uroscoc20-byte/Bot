@@ -1116,7 +1116,6 @@ def format_boss_name_for_select(boss: str) -> str:
         "Ultra Xyfrag": "Void Xyfrag",
         "Ultra Kathool": "Kathool",
         "Ultra Astral": "Astral Shrine",
-        "Ultra Azalith": "Apex Azalith",
         "Ultra Champion Drakath": "Champion Drakath"
     }
     
@@ -1124,7 +1123,7 @@ def format_boss_name_for_select(boss: str) -> str:
 
 
 def format_boss_name_for_embed(boss: str) -> str:
-    """Format boss names for TICKET EMBED (merged names like voidflibbi, ultradage, apexazalith)"""
+    """Format boss names for TICKET EMBED (merged names like voidflibbi, ultradage)"""
     boss_embed_names = {
         "Ultra Lich": "lichlord",
         "Ultra Beast": "beast",
@@ -1134,7 +1133,6 @@ def format_boss_name_for_embed(boss: str) -> str:
         "Ultra Xyfrag": "voidxyfrag",
         "Ultra Kathool": "kathool",
         "Ultra Astral": "astralshrine",
-        "Ultra Azalith": "apexazalith",
         "Ultra Champion Drakath": "championdrakath",
         "Ultra Dage": "ultradage",
         "Ultra Tyndarius": "ultratyndarius",
@@ -1175,7 +1173,7 @@ def create_ticket_embed(
     embed.add_field(name="🌍 Server", value=selected_server, inline=True)
     
     if selected_bosses:
-        # Format boss names as MERGED (voidflibbi, ultradage, apexazalith)
+        # Format boss names as MERGED (voidflibbi, ultradage)
         formatted_bosses = [format_boss_name_for_embed(boss) for boss in selected_bosses]
         embed.add_field(
             name="📋 Selected Bosses",
@@ -1214,9 +1212,9 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
                 commands.append(f"`/join ultra{boss.replace('Ultra ', '').lower()}-{room_number}`")
     
     elif category == "Daily 7-Man Express":
-        # Order: Lich, Beast, Deimos, Flibbi, Bane, Xyfrag, Kathool, Astral, Azalith
+        # Order: Lich, Beast, Deimos, Flibbi, Bane, Xyfrag, Kathool, Astral
         boss_order = ["Ultra Lich", "Ultra Beast", "Ultra Deimos", "Ultra Flibbi", "Ultra Bane", 
-                      "Ultra Xyfrag", "Ultra Kathool", "Ultra Astral", "Ultra Azalith"]
+                      "Ultra Xyfrag", "Ultra Kathool", "Ultra Astral"]
         for boss in boss_order:
             if boss in selected_bosses:
                 # Special cases
@@ -1236,8 +1234,7 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
                     commands.append(f"`/join kathooldepths-{room_number}`")
                 elif boss == "Ultra Astral":
                     commands.append(f"`/join astralshrine-{room_number}`")
-                elif boss == "Ultra Azalith":
-                    commands.append(f"`/join apexazalith-{room_number}`")
+
     
     elif category == "Weekly Ultra Express":
         # Order: Dage > Nulgath > Drago > Darkon > CDrakath

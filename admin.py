@@ -350,11 +350,11 @@ async def setup_admin(bot):
         
         await interaction.channel.send(f"👢 {user.mention} was kicked from the ticket by {interaction.user.mention}.")
 
-    @bot.tree.command(name="remove_cooldown", description="Remove cooldown from a user (Admin/Staff only)")
+    @bot.tree.command(name="remove_cooldown", description="Remove cooldown from a user (Admin/Staff/Officer only)")
     @app_commands.describe(user="User to remove cooldown from")
     async def remove_cooldown(interaction: discord.Interaction, user: discord.Member):
         """Remove join/leave cooldown from a user"""
-        if not is_admin_or_staff(interaction):
+        if not is_admin_staff_or_officer(interaction):
             await interaction.response.send_message(
                 "❌ You don't have permission to use this command.",
                 ephemeral=True

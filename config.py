@@ -121,7 +121,6 @@ DAILY_7MAN_BOSSES = [
     "Ultra Xyfrag",
     "Ultra Kathool",
     "Ultra Astral",
-    "Ultra Azalith",
 ]
 
 BOSS_7MAN_COMMANDS = {
@@ -133,7 +132,6 @@ BOSS_7MAN_COMMANDS = {
     "Ultra Xyfrag": ["Xyfrag"],
     "Ultra Kathool": ["Kathool"],
     "Ultra Astral": ["Astral"],
-    "Ultra Azalith": ["Azalith"],
 }
 
 WEEKLY_ULTRA_BOSSES = [
