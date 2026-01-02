@@ -290,8 +290,8 @@ class TicketModal(discord.ui.Modal):
             await interaction.followup.send("❌ Ticket category not found!", ephemeral=True)
             return
         
-        # Generate random number for ticket (10000-99999)
-        random_number = random.randint(10000, 99999)
+        # Generate random number for ticket (1000-99999)
+        random_number = random.randint(1000, 99999)
         
         # Get channel prefix
         prefix = config.CATEGORY_METADATA.get(self.category, {}).get("prefix", "ticket")
@@ -342,7 +342,24 @@ class TicketModal(discord.ui.Modal):
             selected_bosses=self.selected_bosses,
             selected_server=self.selected_server
         )
-        
+
+        # === QUEUE STATUS FIELD ===
+    # Count how many active tickets were created before this one
+    queue_position = sum(
+        1 for t in all_tickets
+        if not t.get("is_closed", False) and t["channel_id"] != channel.id
+    )
+    if queue_position == 0:
+        queue_text = "🎉 You are next!"
+    else:
+        queue_text = f"Tickets ahead of you: **{queue_position}**"
+    
+    embed.add_field(
+        name="🕒 Queue Status",
+        value=queue_text,
+        inline=False
+    )
+    
         # Create ticket action buttons
         view = TicketActionView()
         
