@@ -85,7 +85,7 @@ async def create_leaderboard_embed(bot, page: int = 1, per_page: int = 10) -> di
     description = "\n".join(lines) if lines else "*No entries yet.*"
     
     embed = discord.Embed(
-        title="🏆 HELPER'S LEADERBOARD SEASON 9",
+        title="🏆 HELPER'S LEADERBOARD SEASON 10",
         description=description,
         color=config.COLORS["PRIMARY"],  # PRIMARY BLURPLE (#5865F2)
         timestamp=discord.utils.utcnow()
