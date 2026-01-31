@@ -98,7 +98,7 @@ POINT_VALUES = {
     "Daily 7-Man Express": 10,
     "Daily 4-Man Express": 4,
     "Daily Temple Express": 6,
-    "Ultra Gramiel Express": 7,
+    "Ultra Gramiel Express": 11,
 }
 
 # ============================================================================
