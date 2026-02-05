@@ -12,6 +12,7 @@ ROLE_IDS = {
     "HELPER": 1368925578895429654,     # Helper role ID
     "RESTRICTED": 1405930080256921732, # Restricted role - can't open tickets
     "VOLUNTEER": 1452737828873306323,  # Volunteer role - gets NO points
+    "APPRENTICE": 1468327624555237396, # Apprentice role - can access learning tickets
 }
 
 # ============================================================================
@@ -23,6 +24,7 @@ CHANNEL_IDS = {
     "VERIFICATION_CATEGORY": 1351864881585852479,  # Category for verification tickets
     "TICKETS_CATEGORY": 1357314571525816442,    # Category for helper tickets
     "TRANSCRIPT": 1357314848253542570,          # Transcript channel
+    "APPRENTICE_TICKET_CATEGORY": 1359581186468610140
 }
 
 # ============================================================================

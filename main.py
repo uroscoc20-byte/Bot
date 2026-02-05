@@ -48,25 +48,28 @@ async def on_ready():
     """Called when bot successfully connects to Discord"""
     print(f"✅ Bot logged in as {bot.user.name} (ID: {bot.user.id})")
     print(f"📊 Connected to {len(bot.guilds)} guild(s)")
-    
+
     # Initialize database
     await bot.db.init()
     print("✅ Database initialized")
-    
-    # Import and register persistent views (CRITICAL - FIXES BUTTON FAILURES)
+
+    # Import and register persistent views (CRITICAL)
     from tickets import TicketView, TicketActionView, DeleteChannelView
     from verification import VerificationView, VerificationActionView
     from leaderboard import LeaderboardView
-    
+    from apprentice_tickets import ApprenticeTicketView, ApprenticeTicketActionView
+
     bot.add_view(TicketView())
     bot.add_view(TicketActionView())
     bot.add_view(DeleteChannelView())
     bot.add_view(VerificationView())
     bot.add_view(VerificationActionView())
     bot.add_view(LeaderboardView())
-    
+    bot.add_view(ApprenticeTicketView())
+    bot.add_view(ApprenticeTicketActionView())
+
     print("✅ Persistent views registered - Buttons will work after restarts!")
-    
+
     # Setup all modules
     from tickets import setup_tickets
     from verification import setup_verification
@@ -74,32 +77,36 @@ async def on_ready():
     from admin import setup_admin
     from stats import setup_stats
     from dumb_things import setup_dumb_things
-    
+    from apprentice_tickets import setup_apprentice_tickets
+
     await setup_tickets(bot)
     print("✅ Ticket system loaded")
-    
+
     await setup_verification(bot)
     print("✅ Verification system loaded")
-    
+
+    await setup_apprentice_tickets(bot)
+    print("✅ Apprentice ticket system loaded")
+
     await setup_leaderboard(bot)
     print("✅ Leaderboard system loaded")
-    
+
     await setup_admin(bot)
     print("✅ Admin system loaded")
-    
+
     await setup_stats(bot)
     print("✅ Stats system loaded")
-    
+
     await setup_dumb_things(bot)
     print("✅ Dumb things system loaded")
-    
+
     # Sync slash commands
     try:
         synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} slash command(s)")
     except Exception as e:
         print(f"⚠️ Failed to sync commands: {e}")
-    
+
     # Set bot status
     await bot.change_presence(
         activity=discord.Activity(
@@ -120,9 +127,9 @@ async def on_error(event, *args, **kwargs):
 async def on_command_error(ctx, error):
     """Command error handler"""
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ You don't have permission to use this command.", ephemeral=True)
+        await ctx.send("❌ You don't have permission to use this command.")
     elif isinstance(error, commands.CommandNotFound):
-        pass  # Ignore unknown commands
+        pass
     else:
         print(f"❌ Command error: {error}")
 
