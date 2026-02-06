@@ -1,5 +1,5 @@
 # apprentice_tickets.py
-# Apprentice Class Ticket System - Eternal Panel
+# Apprentice Class Ticket System - Eternal Panel with proper close permissions
 
 import discord
 from discord.ext import commands
@@ -101,11 +101,12 @@ class ApprenticeTicketModal(discord.ui.Modal):
                 send_messages=True
             )
 
-        # Create channel
+        # Create channel and store ticket opener ID in topic
         try:
             channel = await category.create_text_channel(
                 name=channel_name,
-                overwrites=overwrites
+                overwrites=overwrites,
+                topic=str(interaction.user.id)  # store opener ID
             )
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to create class ticket: {e}", ephemeral=True)
@@ -159,13 +160,23 @@ class ApprenticeTicketActionView(discord.ui.View):
         custom_id="apprentice_class_close"
     )
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        apprentice_role = interaction.guild.get_role(config.ROLE_IDS.get("APPRENTICE"))
+        # Allowed roles: ADMIN, STAFF, OFFICER
+        allowed_roles = [
+            config.ROLE_IDS.get("ADMIN"),
+            config.ROLE_IDS.get("STAFF"),
+            config.ROLE_IDS.get("OFFICER")
+        ]
+        member_roles = [role.id for role in interaction.user.roles]
+        is_staff = any(role_id in member_roles for role_id in allowed_roles)
 
-        # Only teacher or apprentice can close
-        if interaction.user != interaction.channel.permissions_for(interaction.user).read_messages and \
-           apprentice_role not in interaction.user.roles:
+        # Ticket opener ID from channel topic
+        opener_id = int(interaction.channel.topic) if interaction.channel.topic else None
+        is_opener = opener_id == interaction.user.id
+
+        # Only teacher (opener) or allowed staff/admin/officer can close
+        if not (is_staff or is_opener):
             await interaction.response.send_message(
-                "❌ Only the teacher or apprentices can close this class ticket.",
+                "❌ Only the teacher who opened the ticket or staff/admin/officer can close this ticket.",
                 ephemeral=True
             )
             return
