@@ -1,27 +1,30 @@
 # apprentice_tickets.py
-# Apprentice Class Ticket System - SAFE VERSION (no persistent views)
+# Apprentice Class Ticket System - Eternal Panel
 
 import discord
 from discord.ext import commands
-import asyncio
 import config
+import asyncio
 
 # ------------------------------
-# PANEL VIEW
+# Persistent Panel + Button
 # ------------------------------
 class ApprenticeTicketView(discord.ui.View):
+    """Persistent view for eternal apprentice ticket panel"""
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(
         label="Open Class Ticket",
         style=discord.ButtonStyle.primary,
-        emoji="🎫"
+        emoji="🎫",
+        custom_id="apprentice_class_open"
     )
     async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        restricted = interaction.guild.get_role(config.ROLE_IDS["RESTRICTED"])
-        if restricted and restricted in interaction.user.roles:
+        # ❌ Restricted can't open
+        restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
+        if restricted_role and restricted_role in interaction.user.roles:
             await interaction.response.send_message(
                 "❌ You are restricted and cannot open class tickets.",
                 ephemeral=True
@@ -32,58 +35,90 @@ class ApprenticeTicketView(discord.ui.View):
 
 
 # ------------------------------
-# MODAL
+# Modal for Teacher Input
 # ------------------------------
 class ApprenticeTicketModal(discord.ui.Modal):
+    """Modal for class ticket information"""
     def __init__(self):
         super().__init__(title="Open Apprentice Class Ticket")
 
-        self.topic = discord.ui.TextInput(label="Class topic")
-        self.server = discord.ui.TextInput(label="Server")
-        self.room = discord.ui.TextInput(label="Room", required=False)
-        self.extra = discord.ui.TextInput(
-            label="Extra info",
+        self.topic = discord.ui.TextInput(
+            label="Class topic?",
+            placeholder="Example: Ultra Dage solo strategy",
+            required=True,
+            max_length=100
+        )
+        self.add_item(self.topic)
+
+        self.server = discord.ui.TextInput(
+            label="Server?",
+            placeholder="Example: Artix / Galanoth / Yorumi",
+            required=True,
+            max_length=100
+        )
+        self.add_item(self.server)
+
+        self.room = discord.ui.TextInput(
+            label="Room number?",
+            placeholder="Example: 9999",
             required=False,
+            max_length=20
+        )
+        self.add_item(self.room)
+
+        self.extra = discord.ui.TextInput(
+            label="Additional info?",
+            placeholder="Optional notes",
+            required=False,
+            max_length=500,
             style=discord.TextStyle.paragraph
         )
-
-        for item in (self.topic, self.server, self.room, self.extra):
-            self.add_item(item)
+        self.add_item(self.extra)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         guild = interaction.guild
-        teacher = interaction.user
-        category = guild.get_channel(config.CHANNEL_IDS["APPRENTICE_TICKET_CATEGORY"])
+        category = guild.get_channel(config.CHANNEL_IDS.get("APPRENTICE_TICKET_CATEGORY"))
+        if not category:
+            await interaction.followup.send("❌ Ticket category not found.", ephemeral=True)
+            return
 
+        teacher = interaction.user
+        channel_name = f"class-{teacher.name}".lower().replace(" ", "-")[:50]
+
+        # ------------------------------
+        # Permissions
+        # ------------------------------
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             teacher: discord.PermissionOverwrite(view_channel=True, send_messages=True),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
 
-        apprentice = guild.get_role(config.ROLE_IDS["APPRENTICE"])
-        if apprentice:
-            overwrites[apprentice] = discord.PermissionOverwrite(
+        apprentice_role = guild.get_role(config.ROLE_IDS.get("APPRENTICE"))
+        if apprentice_role:
+            overwrites[apprentice_role] = discord.PermissionOverwrite(
                 view_channel=True,
                 send_messages=True
             )
 
+        # Staff / Admin / Officer can see
         for key in ("ADMIN", "STAFF", "OFFICER"):
-            role = guild.get_role(config.ROLE_IDS[key])
+            role = guild.get_role(config.ROLE_IDS.get(key))
             if role:
                 overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=True
                 )
 
-        restricted = guild.get_role(config.ROLE_IDS["RESTRICTED"])
-        if restricted:
-            overwrites[restricted] = discord.PermissionOverwrite(view_channel=False)
+        # Restricted can't see
+        restricted_role = guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
+        if restricted_role:
+            overwrites[restricted_role] = discord.PermissionOverwrite(view_channel=False)
 
         channel = await category.create_text_channel(
-            f"class-{teacher.name}".lower(),
+            name=channel_name,
             overwrites=overwrites
         )
 
@@ -94,15 +129,19 @@ class ApprenticeTicketModal(discord.ui.Modal):
                 f"**Topic:** {self.topic.value}\n"
                 f"**Server:** {self.server.value}\n"
                 f"**Room:** {self.room.value or 'N/A'}\n"
-                f"**Extra:** {self.extra.value or 'None'}"
+                f"**Extra info:** {self.extra.value or 'None'}\n\n"
+                "Only the teacher or staff can close this ticket."
             ),
-            color=config.COLORS.get("INFO", 0x00ffdd)
+            color=config.COLORS.get("INFO", 0x00ffdd),
+            timestamp=discord.utils.utcnow()
         )
+        embed.set_thumbnail(url=teacher.display_avatar.url)
 
-        view = ApprenticeCloseView(teacher.id)
+        view = ApprenticeTicketActionView(teacher.id)
 
+        ping = apprentice_role.mention if apprentice_role else ""
         await channel.send(
-            content=apprentice.mention if apprentice else None,
+            content=f"{ping}\n{teacher.mention} started a class ticket!",
             embed=embed,
             view=view
         )
@@ -114,9 +153,9 @@ class ApprenticeTicketModal(discord.ui.Modal):
 
 
 # ------------------------------
-# CLOSE BUTTON
+# Action View for Closing Ticket
 # ------------------------------
-class ApprenticeCloseView(discord.ui.View):
+class ApprenticeTicketActionView(discord.ui.View):
     def __init__(self, teacher_id: int):
         super().__init__(timeout=None)
         self.teacher_id = teacher_id
@@ -124,7 +163,8 @@ class ApprenticeCloseView(discord.ui.View):
     @discord.ui.button(
         label="Close Class Ticket",
         style=discord.ButtonStyle.danger,
-        emoji="🗑️"
+        emoji="🗑️",
+        custom_id="apprentice_class_close"
     )
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
 
@@ -132,52 +172,63 @@ class ApprenticeCloseView(discord.ui.View):
 
         is_teacher = member.id == self.teacher_id
         is_staff = any(
-            member.get_role(config.ROLE_IDS[r])
+            member.get_role(config.ROLE_IDS.get(r))
             for r in ("ADMIN", "STAFF", "OFFICER")
         )
 
         if not (is_teacher or is_staff):
             await interaction.response.send_message(
-                "❌ Only teacher or staff can close this ticket.",
+                "❌ Only the teacher or staff can close this class ticket.",
                 ephemeral=True
             )
             return
 
         await interaction.response.send_message(
-            "✅ Closing ticket in 5 seconds..."
+            f"✅ Class ticket closed by {member.mention}. Deleting channel in 5 seconds..."
         )
         await asyncio.sleep(5)
         await interaction.channel.delete()
 
 
 # ------------------------------
-# COMMAND
+# Setup function (UNCHANGED)
 # ------------------------------
-async def setup(bot: commands.Bot):
+async def setup_apprentice_tickets(bot):
 
     @bot.tree.command(
         name="apprentice_ticket_panel",
-        description="Post apprentice class ticket panel"
+        description="Post the eternal apprentice class ticket panel"
     )
     async def apprentice_ticket_panel(interaction: discord.Interaction):
 
-        if not any(
-            interaction.user.get_role(config.ROLE_IDS[r])
-            for r in ("ADMIN", "STAFF")
-        ):
+        is_staff = any(
+            interaction.user.get_role(rid)
+            for rid in (
+                config.ROLE_IDS.get("ADMIN"),
+                config.ROLE_IDS.get("STAFF"),
+            )
+            if rid
+        )
+
+        if not is_staff:
             await interaction.response.send_message(
-                "❌ You don't have permission.",
+                "❌ You don't have permission to post the apprentice ticket panel.",
                 ephemeral=True
             )
             return
 
+        await interaction.response.defer(ephemeral=False)
+
         embed = discord.Embed(
             title="🎫 Apprentice Class Tickets",
-            description="Click below to open a class for apprentices.",
+            description=(
+                "Skilled players can open a class ticket to teach apprentices.\n\n"
+                "Click **Open Class Ticket** and fill out the modal."
+            ),
             color=config.COLORS.get("INFO", 0x00ffdd)
         )
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             embed=embed,
             view=ApprenticeTicketView()
         )
