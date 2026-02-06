@@ -3,7 +3,6 @@
 
 import discord
 from discord.ext import commands
-from discord import app_commands
 import config
 import asyncio
 
@@ -20,6 +19,7 @@ class ApprenticeTicketView(discord.ui.View):
         custom_id="apprentice_ticket_open"
     )
     async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Open modal for apprentice ticket"""
         await interaction.response.send_modal(ApprenticeTicketModal())
 
 
@@ -65,28 +65,23 @@ class ApprenticeTicketModal(discord.ui.Modal):
         self.add_item(self.extra)
 
     async def on_submit(self, interaction: discord.Interaction):
+        """Create the apprentice ticket channel"""
         await interaction.response.defer(ephemeral=True)
 
         guild = interaction.guild
         category_id = config.CHANNEL_IDS.get("APPRENTICE_TICKET_CATEGORY")
-
         if not category_id:
-            await interaction.followup.send(
-                "❌ Apprentice ticket category not configured!",
-                ephemeral=True
-            )
+            await interaction.followup.send("❌ Apprentice ticket category not configured!", ephemeral=True)
             return
 
         category = guild.get_channel(category_id)
         if not category:
-            await interaction.followup.send(
-                "❌ Apprentice ticket category not found!",
-                ephemeral=True
-            )
+            await interaction.followup.send("❌ Apprentice ticket category not found!", ephemeral=True)
             return
 
         channel_name = f"apprentice-{interaction.user.name}".lower().replace(" ", "-")[:50]
 
+        # Set channel permissions
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
@@ -106,12 +101,10 @@ class ApprenticeTicketModal(discord.ui.Modal):
                 overwrites=overwrites
             )
         except Exception as e:
-            await interaction.followup.send(
-                f"❌ Failed to create apprentice ticket: {e}",
-                ephemeral=True
-            )
+            await interaction.followup.send(f"❌ Failed to create ticket: {e}", ephemeral=True)
             return
 
+        # Embed in the ticket channel
         embed = discord.Embed(
             title="🎫 Apprentice Help Request",
             description=(
@@ -123,7 +116,7 @@ class ApprenticeTicketModal(discord.ui.Modal):
                 "**Apprentice:** Please assist with this request.\n"
                 "Close the ticket when finished."
             ),
-            color=config.COLORS["INFO"],
+            color=config.COLORS.get("INFO", 0x00ffdd),
             timestamp=discord.utils.utcnow()
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -145,7 +138,7 @@ class ApprenticeTicketModal(discord.ui.Modal):
 
 
 class ApprenticeTicketActionView(discord.ui.View):
-    """Action buttons for apprentice ticket"""
+    """Buttons to close apprentice tickets"""
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -158,33 +151,30 @@ class ApprenticeTicketActionView(discord.ui.View):
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         apprentice_role = interaction.guild.get_role(config.ROLE_IDS.get("APPRENTICE"))
 
-        if apprentice_role not in interaction.user.roles:
+        # Only ticket opener or apprentice role can close
+        if apprentice_role not in interaction.user.roles and interaction.user != interaction.channel.permissions_for(interaction.user).read_messages:
             await interaction.response.send_message(
-                "❌ Only Apprentices can close this ticket.",
+                "❌ Only Apprentices or ticket opener can close this ticket.",
                 ephemeral=True
             )
             return
 
         await interaction.response.send_message(
-            f"✅ Apprentice ticket closed by {interaction.user.mention}.\n"
-            "Deleting channel in 5 seconds..."
+            f"✅ Apprentice ticket closed by {interaction.user.mention}.\nDeleting channel in 5 seconds..."
         )
 
         await asyncio.sleep(5)
         try:
-            await interaction.channel.delete(
-                reason=f"Apprentice ticket closed by {interaction.user}"
-            )
+            await interaction.channel.delete(reason=f"Apprentice ticket closed by {interaction.user}")
         except:
             pass
 
 
 async def setup_apprentice_tickets(bot):
-    """Setup apprentice ticket panel command"""
-
+    """Register panel command for apprentices"""
     @bot.tree.command(
         name="apprentice_ticket_panel",
-        description="Post the apprentice ticket panel (Staff only)"
+        description="Post the apprentice ticket panel (Staff/Admin only)"
     )
     async def apprentice_ticket_panel(interaction: discord.Interaction):
         member = interaction.user
@@ -201,6 +191,10 @@ async def setup_apprentice_tickets(bot):
             )
             return
 
+        # ✅ Defer to avoid "The application did not respond"
+        await interaction.response.defer(ephemeral=True)
+
+        view = ApprenticeTicketView()
         embed = discord.Embed(
             title="🎫 Apprentice Tickets",
             description=(
@@ -212,12 +206,7 @@ async def setup_apprentice_tickets(bot):
                 "- Any extra info\n\n"
                 "An **Apprentice** will assist you shortly."
             ),
-            color=config.COLORS["INFO"]
+            color=config.COLORS.get("INFO", 0x00ffdd)
         )
 
-        view = ApprenticeTicketView()
-        await interaction.channel.send(embed=embed, view=view)
-        await interaction.response.send_message(
-            "✅ Apprentice ticket panel posted!",
-            ephemeral=True
-        )
+        await interaction.followup.send(embed=embed, view=view)
