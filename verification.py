@@ -104,7 +104,7 @@ class VerificationModal(discord.ui.Modal):
 
         view = VerificationActionView()
 
-        mentions = []
+        mentions = [interaction.user.mention]
         if staff_role:
             mentions.append(staff_role.mention)
         if officer_role:
