@@ -1,27 +1,24 @@
+"""Cooldown management for ticket actions"""
+import asyncio
 import time
+from typing import Optional
 
-class CooldownManager:
-    def __init__(self):
-        self.cooldowns = {}
+ticket_locks = {}
+join_cooldowns = {}
+leave_cooldowns = {}
+COOLDOWN_SECONDS = 120
 
-    def set_cooldown(self, user_id, duration):
-        self.cooldowns[user_id] = time.time() + duration
+def get_ticket_lock(channel_id: int):
+    if channel_id not in ticket_locks:
+        ticket_locks[channel_id] = asyncio.Lock()
+    return ticket_locks[channel_id]
 
-    def is_on_cooldown(self, user_id):
-        if user_id in self.cooldowns:
-            if time.time() < self.cooldowns[user_id]:
-                return True
-            else:
-                del self.cooldowns[user_id]
-        return False
+def check_cooldown(user_id: int, cooldown_dict: dict) -> Optional[int]:
+    if user_id in cooldown_dict:
+        elapsed = time.time() - cooldown_dict[user_id]
+        if elapsed < COOLDOWN_SECONDS:
+            return int(COOLDOWN_SECONDS - elapsed)
+    return None
 
-    def get_remaining_time(self, user_id):
-        if user_id in self.cooldowns:
-            return max(0, self.cooldowns[user_id] - time.time())
-        return 0
-
-# Example usage:
-# cooldown_manager = CooldownManager()
-# cooldown_manager.set_cooldown('user123', 10)  # 10-second cooldown
-# if cooldown_manager.is_on_cooldown('user123'): 
-#     print(f'User is on cooldown for {cooldown_manager.get_remaining_time('user123')} seconds')
+def set_cooldown(user_id: int, cooldown_dict: dict):
+    cooldown_dict[user_id] = time.time()
