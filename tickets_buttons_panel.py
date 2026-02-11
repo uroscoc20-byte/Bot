@@ -2,6 +2,7 @@
 
 import discord
 from typing import Optional, List
+import traceback
 import config
 from tickets_modals import TicketModal
 
@@ -34,12 +35,10 @@ class TicketButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         """Handle ticket button click"""
         try:
-            await interaction.response.defer(ephemeral=True)
-            
             # Check if user has RESTRICTED role
             restricted_role = interaction.guild.get_role(config.ROLE_IDS.get("RESTRICTED"))
             if restricted_role and restricted_role in interaction.user.roles:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     "❌ You are restricted from opening tickets.",
                     ephemeral=True
                 )
@@ -53,22 +52,21 @@ class TicketButton(discord.ui.Button):
                 if interaction.user.id == ticket["requestor_id"]:
                     channel = interaction.guild.get_channel(ticket["channel_id"])
                     if channel:
-                        await interaction.followup.send(
+                        await interaction.response.send_message(
                             f"❌ You already have an active ticket: {channel.mention}\n"
                             "Please close that ticket first.",
                             ephemeral=True
                         )
                         return
             
-            # Open the ticket modal
+            # Open the ticket modal DIRECTLY (don't defer!)
             modal = TicketModal(category=self.category, selected_bosses=None, selected_server=None)
-            await interaction.followup.send("📝 Opening ticket form...", ephemeral=True)
             await interaction.response.send_modal(modal)
             
         except Exception as e:
             print(f"❌ Button callback error: {e}")
             traceback.print_exc()
             try:
-                await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+                await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
             except:
                 pass
