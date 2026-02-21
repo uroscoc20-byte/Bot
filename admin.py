@@ -190,7 +190,7 @@ async def setup_admin(bot):
     @bot.tree.command(name="points_reset", description="Reset all points (Admin only)")
     async def points_reset(interaction: discord.Interaction):
         """Reset all points - requires confirmation"""
-        if not is_admin_or_staff(interaction):
+        if interaction.user.get_role(config.ROLE_IDS.get("ADMIN")) is None:
             await interaction.response.send_message(
                 "❌ You don't have permission to use this command.",
                 ephemeral=True
@@ -216,7 +216,7 @@ async def setup_admin(bot):
     @app_commands.describe(user_id="User ID or mention to remove from leaderboard")
     async def points_remove_user(interaction: discord.Interaction, user_id: str):
         """Remove user from leaderboard entirely - supports ID or mention"""
-        if not is_admin_or_staff(interaction):
+        if interaction.user.get_role(config.ROLE_IDS.get("ADMIN")) is None:
             await interaction.response.send_message(
                 "❌ You don't have permission to use this command.",
                 ephemeral=True
