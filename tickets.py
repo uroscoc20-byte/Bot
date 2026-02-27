@@ -331,7 +331,12 @@ class TicketModal(discord.ui.Modal):
             await interaction.followup.send(f"❌ Failed to create ticket: {e}", ephemeral=True)
             return
         
-        # Create ticket embed
+        # Count currently active tickets
+        all_tickets = await bot.db.get_all_tickets()
+        active_tickets = [t for t in all_tickets if not t.get("is_closed", False)]
+        ticket_order = len(active_tickets) + 1  # this ticket's order
+
+        # Create ticket embed with order number
         embed = create_ticket_embed(
             category=self.category,
             requestor_id=interaction.user.id,
@@ -340,12 +345,12 @@ class TicketModal(discord.ui.Modal):
             helpers=[],
             random_number=random_number,
             selected_bosses=self.selected_bosses,
-            selected_server=self.selected_server
+            selected_server=self.selected_server,
+            ticket_order=ticket_order  # pass the order number
         )
         
         # Create ticket action buttons
         view = TicketActionView()
-        
         # Send ticket message with REQUESTOR + HELPER ROLE PING
         ping_content = f"{interaction.user.mention}"
         if helper_role:
