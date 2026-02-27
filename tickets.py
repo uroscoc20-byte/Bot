@@ -1209,7 +1209,7 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
         for boss in boss_order:
             if boss in selected_bosses:
                 # Ultra + word together
-                commands.append(f"`/join ultra{boss.replace('Ultra ', '').lower()}-{room_number}`")
+                commands.append(f"```/join ultra{boss.replace('Ultra ', '').lower()}-{room_number}```")
     
     elif category == "Daily 7-Man Express":
         # Order: Lich, Beast, Deimos, Flibbi, Bane, Xyfrag, Kathool, Astral
@@ -1219,21 +1219,21 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
             if boss in selected_bosses:
                 # Special cases
                 if boss == "Ultra Lich":
-                    commands.append(f"`/join frozenlair-{room_number}`")
+                    commands.append(f"```/join frozenlair-{room_number}```")
                 elif boss == "Ultra Beast":
-                    commands.append(f"`/join sevencircleswar-{room_number}`")
+                    commands.append(f"```/join sevencircleswar-{room_number}```")
                 elif boss == "Ultra Deimos":
-                    commands.append(f"`/join deimos-{room_number}`")
+                    commands.append(f"```/join deimos-{room_number}```")
                 elif boss == "Ultra Flibbi":
-                    commands.append(f"`/join voidflibbi-{room_number}`")
+                    commands.append(f"```/join voidflibbi-{room_number}```")
                 elif boss == "Ultra Bane":
-                    commands.append(f"`/join voidnightbane-{room_number}`")
+                    commands.append(f"```/join voidnightbane-{room_number}```")
                 elif boss == "Ultra Xyfrag":
-                    commands.append(f"`/join voidxyfrag-{room_number}`")
+                    commands.append(f"```/join voidxyfrag-{room_number}```")
                 elif boss == "Ultra Kathool":
-                    commands.append(f"`/join kathooldepths-{room_number}`")
+                    commands.append(f"```/join kathooldepths-{room_number}```")
                 elif boss == "Ultra Astral":
-                    commands.append(f"`/join astralshrine-{room_number}`")
+                    commands.append(f"```/join astralshrine-{room_number}```")
 
     
     elif category == "Weekly Ultra Express":
@@ -1242,22 +1242,22 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
         for boss in boss_order:
             if boss in selected_bosses:
                 if boss == "Ultra Champion Drakath":
-                    commands.append(f"`/join championdrakath-{room_number}`")
+                    commands.append(f"```/join championdrakath-{room_number}```")
                 else:
                     # Ultra + word together
-                    commands.append(f"`/join ultra{boss.replace('Ultra ', '').lower()}-{room_number}`")
+                    commands.append(f"```/join ultra{boss.replace('Ultra ', '').lower()}-{room_number}```")
     
     elif category == "UltraSpeaker Express":
-        commands.append(f"`/join ultraspeaker-{room_number}`")
+        commands.append(f"```/join ultraspeaker-{room_number}```")
     
     elif category == "Ultra Gramiel Express":
-        commands.append(f"`/join ultragramiel-{room_number}`")
+        commands.append(f"```/join ultragramiel-{room_number}```")
     
     elif category == "GrimChallenge Express":
-        commands.append(f"`/join grimchallenge-{room_number}`")
+        commands.append(f"```/join grimchallenge-{room_number}```")
     
     elif category == "Daily Temple Express":
-        commands.append(f"`/join templeshrine-{room_number}`")
+        commands.append(f"```/join templeshrine-{room_number}```")
     
     return "\n".join(commands) if commands else ""
 
