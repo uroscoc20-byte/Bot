@@ -542,18 +542,19 @@ class TicketActionView(discord.ui.View):
         await interaction.response.send_message(f"✅ You've left the ticket!", ephemeral=True)
         await interaction.channel.send(f"🚪 {interaction.user.mention} left the ticket.")
     
-    @discord.ui.button(label="Join Ticket", style=discord.ButtonStyle.success, emoji="✅", custom_id="ticket_join_persistent", row=1)
-    async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Helper joins ticket - ONE TICKET AT A TIME - WITH RACE CONDITION PROTECTION AND 120 SECOND COOLDOWN"""
-        # Check cooldown FIRST
-        remaining = check_cooldown(interaction.user.id, join_cooldowns)
-        if remaining:
-            await interaction.response.send_message(
-                f"⏳ You're on cooldown! Please wait **{remaining} seconds** before joining another ticket.",
-                ephemeral=True
-            )
-            return
-        
+await interaction.response.send_message(
+    f"✅ You've joined the ticket!\n\n"
+    f"🎮 **Room Number: `{ticket['random_number']}`**\n\n"
+    f"**Join Commands:**\n" +
+    "\n".join([f"```{cmd}```" for cmd in generate_join_commands(
+        ticket["category"],
+        selected_bosses,
+        ticket["random_number"],
+        selected_server
+    ).split("\n")]) +
+    "\n\n⚠️ **DO NOT share this room number with anyone outside this ticket!**",
+    ephemeral=True
+)
         # === ACQUIRE LOCK TO PREVENT RACE CONDITIONS ===
         lock = get_ticket_lock(interaction.channel_id)
         
