@@ -135,14 +135,20 @@ async def on_command_error(ctx, error):
 
 
 @bot.event
+@bot.event
 async def on_member_remove(member: discord.Member):
     """Auto-delete user points and leaderboard entry when they leave"""
     try:
         from points_logger import log_member_left
+
+        # First log the user's current points
+        await log_member_left(bot, member.id, member.name)
+
+        # Then delete points from database
         deleted = await bot.db.delete_user_points(member.id)
         if deleted:
             print(f"✅ Auto-removed points for {member.name} (ID: {member.id}) - Left server")
-            await log_member_left(bot, member.id, member.name)
+
     except Exception as e:
         print(f"⚠️ Error auto-removing points for {member.name}: {e}")
 
