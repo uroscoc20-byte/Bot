@@ -133,9 +133,18 @@ bot.add_view(ApprenticeTicketView())
 bot.add_view(ApprenticeTicketActionView())
 
 # ------------------------------
-# Start bot
+# Start bot + webserver (Render-friendly)
 # ------------------------------
 if __name__ == "__main__":
+    # Start the webserver for Render
+    try:
+        import webserver
+        webserver.start()
+        print("✅ Webserver started for uptime monitoring")
+    except Exception as e:
+        print(f"⚠️ Webserver failed: {e}")
+
+    # Start Discord bot
     try:
         bot.run(TOKEN)
     except KeyboardInterrupt:
