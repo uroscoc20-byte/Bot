@@ -6,14 +6,15 @@
 # ROLE IDS - Replace with your Discord role IDs
 # ============================================================================
 ROLE_IDS = {
-    "ADMIN": 1345073680610496602,                 # Admin role ID
-    "STAFF": 1392803882115010734,                 # Executive officer ID
-    "OFFICER": 1445116463253033053,               # Staff ID
-    "HELPER": 1368925578895429654,                # Helper role ID
-    "RESTRICTED": 1405930080256921732,            # Restricted role - can't open tickets
-    "VOLUNTEER": 1452737828873306323,             # Volunteer role - gets NO points
-    "APPRENTICE": 1468327624555237396,            # Apprentice role - can access learning tickets
+    "ADMIN": 1345073680610496602,      # Admin role ID
+    "STAFF": 1374821509268373686,      # Staff role ID
+    "OFFICER": 1445116463253033053,    # Officer role ID
+    "HELPER": 1368925578895429654,     # Helper role ID
+    "RESTRICTED": 1405930080256921732, # Restricted role - can't open tickets
+    "VOLUNTEER": 1452737828873306323,  # Volunteer role - gets NO points
+    "APPRENTICE": 1468327624555237396, # Apprentice role - can access learning tickets
 }
+
 # ============================================================================
 # CHANNEL/CATEGORY IDS - Replace with your Discord channel/category IDs
 # ============================================================================
@@ -167,6 +168,8 @@ HARDCODED_COMMANDS = {
             "You can open each ticket category only **twice per reset period** — daily categories up to **2 times per day**, and weekly categories up to **2 times per week**.\n\n"
             "### :bust_in_silhouette: No Premade Allowed\n"
             "You may only open a ticket if you're **alone**. Absolutely no premade teams. **Only Helpers + YOU**\n\n"
+            "### :closed_lock_with_key: Always Use a Private Room\n"
+            "Tickets must be opened in a **private room** e.g. `ultraspeaker-2310`. If you use a public room number and anyone else is in the room, the ticket is disqualified.\n\n"
             "### :performing_arts: Skill Issue ≠ Trolling\n"
             "It's okay to be bad. However, **sabotaging the run intentionally** or **trolling** in any form is not tolerated. If it happens multiple times, your ability to open tickets may be revoked. (Proof or staff confirmation is required in any complains). **Always listen to helper's calls**\n\n"
             "### :camera_with_flash: You Must Take the Screenshot\n"

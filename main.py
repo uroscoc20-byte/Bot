@@ -10,6 +10,16 @@ from database import Database
 
 # Load environment variables
 load_dotenv()
+
+# Import webserver for uptime monitoring
+try:
+    import webserver
+    webserver.start()
+    print("✅ Webserver started for uptime monitoring")
+except Exception as e:
+    print(f"⚠️ Webserver not started: {e}")
+
+# Bot configuration
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("❌ DISCORD_BOT_TOKEN not found in environment variables!")
@@ -26,38 +36,29 @@ bot = commands.Bot(
     help_command=None,
 )
 
-# Initialize database and attach to bot
+# Initialize database
 db = Database()
+
+# Store database in bot for access in modules
 bot.db = db
 
-# ------------------------------
-# Import persistent views
-# ------------------------------
-from tickets import TicketView, TicketActionView, DeleteChannelView, setup_tickets
-from verification import VerificationView, VerificationActionView, setup_verification
-from leaderboard import LeaderboardView, setup_leaderboard
-from apprentice_tickets import (
-    ApprenticeTicketView,
-    ApprenticeTicketActionView,
-    setup_apprentice_tickets,
-)
-from admin import setup_admin
-from stats import setup_stats
-from dumb_things import setup_dumb_things
 
-# ------------------------------
-# Bot events
-# ------------------------------
 @bot.event
 async def on_ready():
-    print(f"✅ Bot logged in as {bot.user} (ID: {bot.user.id})")
+    """Called when bot successfully connects to Discord"""
+    print(f"✅ Bot logged in as {bot.user.name} (ID: {bot.user.id})")
     print(f"📊 Connected to {len(bot.guilds)} guild(s)")
 
     # Initialize database
     await bot.db.init()
     print("✅ Database initialized")
 
-    # Register persistent views (buttons will work after restarts)
+    # Import and register persistent views (CRITICAL)
+    from tickets import TicketView, TicketActionView, DeleteChannelView
+    from verification import VerificationView, VerificationActionView
+    from leaderboard import LeaderboardView
+    from apprentice_tickets import ApprenticeTicketView, ApprenticeTicketActionView
+
     bot.add_view(TicketView())
     bot.add_view(TicketActionView())
     bot.add_view(DeleteChannelView())
@@ -66,21 +67,36 @@ async def on_ready():
     bot.add_view(LeaderboardView())
     bot.add_view(ApprenticeTicketView())
     bot.add_view(ApprenticeTicketActionView())
-    print("✅ Persistent views registered")
 
-    # Setup all systems/modules
+    print("✅ Persistent views registered - Buttons will work after restarts!")
+
+    # Setup all modules
+    from tickets import setup_tickets
+    from verification import setup_verification
+    from leaderboard import setup_leaderboard
+    from admin import setup_admin
+    from stats import setup_stats
+    from dumb_things import setup_dumb_things
+    from apprentice_tickets import setup_apprentice_tickets
+
     await setup_tickets(bot)
     print("✅ Ticket system loaded")
+
     await setup_verification(bot)
     print("✅ Verification system loaded")
+
     await setup_apprentice_tickets(bot)
     print("✅ Apprentice ticket system loaded")
+
     await setup_leaderboard(bot)
     print("✅ Leaderboard system loaded")
+
     await setup_admin(bot)
     print("✅ Admin system loaded")
+
     await setup_stats(bot)
     print("✅ Stats system loaded")
+
     await setup_dumb_things(bot)
     print("✅ Dumb things system loaded")
 
@@ -93,18 +109,23 @@ async def on_ready():
 
     # Set bot status
     await bot.change_presence(
-        activity=discord.Activity(type=discord.ActivityType.watching, name="tickets | /panel")
+        activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name="tickets | /panel"
+        )
     )
     print("✅ Bot is ready!")
 
 
 @bot.event
 async def on_error(event, *args, **kwargs):
+    """Global error handler"""
     print(f"❌ Error in {event}: {args} {kwargs}")
 
 
 @bot.event
 async def on_command_error(ctx, error):
+    """Command error handler"""
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("❌ You don't have permission to use this command.")
     elif isinstance(error, commands.CommandNotFound):
@@ -115,24 +136,17 @@ async def on_command_error(ctx, error):
 
 @bot.event
 async def on_member_remove(member: discord.Member):
-    """Auto-remove user points/leaderboard when they leave"""
+    """Auto-delete user points and leaderboard entry when they leave"""
     try:
         from points_logger import log_member_left
-
-        # Log points
-        await log_member_left(bot, member.id, member.name)
-
-        # Delete points from database
         deleted = await bot.db.delete_user_points(member.id)
         if deleted:
-            print(f"✅ Removed points for {member.name} (ID: {member.id})")
+            print(f"✅ Auto-removed points for {member.name} (ID: {member.id}) - Left server")
+            await log_member_left(bot, member.id, member.name)
     except Exception as e:
         print(f"⚠️ Error auto-removing points for {member.name}: {e}")
 
 
-# ------------------------------
-# Start bot
-# ------------------------------
 if __name__ == "__main__":
     try:
         bot.run(TOKEN)
