@@ -62,8 +62,8 @@ class VerificationModal(discord.ui.Modal):
 
         channel_name = f"verify-{interaction.user.name}".lower().replace(" ", "-")[:50]
 
-        admin_role   = guild.get_role(config.ROLE_IDS.get("ADMIN"))
-        staff_role   = guild.get_role(config.ROLE_IDS.get("STAFF"))
+        admin_role = guild.get_role(config.ROLE_IDS.get("ADMIN"))
+        staff_role = guild.get_role(config.ROLE_IDS.get("STAFF"))
         officer_role = guild.get_role(config.ROLE_IDS.get("OFFICER"))
 
         overwrites = {
@@ -72,18 +72,12 @@ class VerificationModal(discord.ui.Modal):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
 
-        if admin_role:
-            overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        if staff_role:
-            overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        if officer_role:
-            overwrites[officer_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        for role in [admin_role, staff_role, officer_role]:
+            if role:
+                overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
 
         try:
-            channel = await category.create_text_channel(
-                name=channel_name,
-                overwrites=overwrites
-            )
+            channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to create ticket: {e}", ephemeral=True)
             return
@@ -105,27 +99,17 @@ class VerificationModal(discord.ui.Modal):
         view = VerificationActionView()
 
         mentions = [interaction.user.mention]
-        if staff_role:
-            mentions.append(staff_role.mention)
-        if officer_role:
-            mentions.append(officer_role.mention)
-        if admin_role:
-            mentions.append(admin_role.mention)
+        for role in [staff_role, officer_role, admin_role]:
+            if role:
+                mentions.append(role.mention)
 
-        await channel.send(
-            content=" ".join(mentions),
-            embed=embed,
-            view=view
-        )
+        await channel.send(content=" ".join(mentions), embed=embed, view=view)
 
-        await interaction.followup.send(
-            f"✅ Verification ticket created: {channel.mention}",
-            ephemeral=True
-        )
+        await interaction.followup.send(f"✅ Verification ticket created: {channel.mention}", ephemeral=True)
 
 
 class VerificationActionView(discord.ui.View):
-    """Action buttons for verification ticket"""
+    """Buttons inside verification ticket"""
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -141,7 +125,7 @@ class VerificationActionView(discord.ui.View):
         allowed_roles = [
             config.ROLE_IDS.get("ADMIN"),
             config.ROLE_IDS.get("STAFF"),
-            config.ROLE_IDS.get("OFFICER"),
+            config.ROLE_IDS.get("OFFICER")
         ]
 
         if not any(member.get_role(rid) for rid in allowed_roles if rid):
@@ -158,15 +142,13 @@ class VerificationActionView(discord.ui.View):
 
         await asyncio.sleep(5)
         try:
-            await interaction.channel.delete(
-                reason=f"Verification closed by {interaction.user}"
-            )
+            await interaction.channel.delete(reason=f"Verification closed by {interaction.user}")
         except:
             pass
 
 
 async def setup_verification(bot: commands.Bot):
-    """Setup verification commands"""
+    """Setup verification panel command"""
 
     @bot.tree.command(
         name="verification_panel",
@@ -174,11 +156,10 @@ async def setup_verification(bot: commands.Bot):
     )
     async def verification_panel(interaction: discord.Interaction):
         member = interaction.user
-
         allowed_roles = [
             config.ROLE_IDS.get("ADMIN"),
             config.ROLE_IDS.get("STAFF"),
-            config.ROLE_IDS.get("OFFICER"),
+            config.ROLE_IDS.get("OFFICER")
         ]
 
         if not any(member.get_role(rid) for rid in allowed_roles if rid):
@@ -188,7 +169,9 @@ async def setup_verification(bot: commands.Bot):
             )
             return
 
-        # ✅ Embed must be indented inside the function
+        # ✅ Defer interaction to avoid double-acknowledge
+        await interaction.response.defer(ephemeral=True)
+
         embed = discord.Embed(
             title="🛡️ Verification Panel",
             description=(
@@ -204,7 +187,4 @@ async def setup_verification(bot: commands.Bot):
         )
 
         await interaction.channel.send(embed=embed, view=VerificationView())
-        await interaction.response.send_message(
-            "✅ Verification panel posted!",
-            ephemeral=True
-        )
+        await interaction.followup.send("✅ Verification panel posted!", ephemeral=True)
