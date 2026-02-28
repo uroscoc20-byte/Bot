@@ -135,22 +135,37 @@ async def log_user_deleted(bot, user_id: int, admin_id: int):
 
 
 async def log_member_left(bot, member_id: int, member_name: str):
-    """Log when a member leaves the server"""
+    """Log when a member leaves the server (with their last points)"""
     try:
         channel = bot.get_channel(LOG_CHANNEL_ID)
         if not channel:
             return
-        
+
+        # Get user's points BEFORE deletion
+        points = await bot.db.get_points(member_id)
+        if points is None:
+            points = 0
+
         leaderboard_preview = await get_leaderboard_preview(bot, limit=10)
-        
+
         embed = discord.Embed(
             title="👋 Member Left - Points Auto-Deleted",
-            description=f"**Member:** {member_name} (ID: {member_id})\n**Action:** Auto-removed from leaderboard",
+            description=(
+                f"**Member:** {member_name} (ID: {member_id})\n"
+                f"**Points at leave:** {points:,}\n"
+                f"**Action:** Auto-removed from leaderboard"
+            ),
             color=discord.Color.greyple(),
             timestamp=datetime.utcnow()
         )
-        embed.add_field(name="📊 Top 10 Leaderboard", value=leaderboard_preview, inline=False)
-        
+
+        embed.add_field(
+            name="📊 Top 10 Leaderboard",
+            value=leaderboard_preview,
+            inline=False
+        )
+
         await channel.send(embed=embed)
+
     except Exception as e:
         print(f"❌ Error logging member_left: {e}")
