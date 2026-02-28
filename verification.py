@@ -188,17 +188,19 @@ async def setup_verification(bot: commands.Bot):
             )
             return
 
-        embed = discord.Embed(
-            title="🛡️ Verification Panel",
-            description=(
-                "Welcome!\n\n"
-                "Click **Verify** and fill out the form to gain access.\n\n"
-                "- **In-game name**\n"
-                "- **Who invited you** (optional)\n\n"
-                "Staff will review your request shortly."
-            ),
-            color=config.COLORS["SUCCESS"]
-        )
+embed = discord.Embed(
+    title="🛡️ Verification Panel",
+    description=(
+        "Welcome to the server!\n\n"
+        "To gain access, please complete the short verification process below.\n\n"
+        "Click **Verify** and provide the following information:\n\n"
+        "- **In-Game Name** – The name you use in the game.\n"
+        "- **Who Invited You** – The name of the person who invited you to the server (if anyone).\n\n"
+        "⚠️ Please make sure the information is accurate and complete.\n"
+        "Once submitted, a staff member will review your verification and grant access as soon as possible."
+    ),
+    color=config.COLORS["SUCCESS"]
+)
 
         await interaction.channel.send(embed=embed, view=VerificationView())
         await interaction.response.send_message(
