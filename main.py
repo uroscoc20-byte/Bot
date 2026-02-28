@@ -57,16 +57,6 @@ async def on_ready():
     await bot.db.init()
     print("✅ Database initialized")
 
-    # Register persistent views (buttons will work after restarts)
-    bot.add_view(TicketView())
-    bot.add_view(TicketActionView())
-    bot.add_view(DeleteChannelView())
-    bot.add_view(VerificationView())
-    bot.add_view(VerificationActionView())
-    bot.add_view(LeaderboardView())
-    bot.add_view(ApprenticeTicketView())
-    bot.add_view(ApprenticeTicketActionView())
-    print("✅ Persistent views registered")
 
     # Setup all systems/modules
     await setup_tickets(bot)
@@ -129,6 +119,18 @@ async def on_member_remove(member: discord.Member):
     except Exception as e:
         print(f"⚠️ Error auto-removing points for {member.name}: {e}")
 
+
+# ------------------------------
+# Persistent views (MUST be registered before bot starts)
+# ------------------------------
+bot.add_view(TicketView())
+bot.add_view(TicketActionView())
+bot.add_view(DeleteChannelView())
+bot.add_view(VerificationView())
+bot.add_view(VerificationActionView())
+bot.add_view(LeaderboardView())
+bot.add_view(ApprenticeTicketView())
+bot.add_view(ApprenticeTicketActionView())
 
 # ------------------------------
 # Start bot
