@@ -57,37 +57,42 @@ async def on_ready():
     await bot.db.init()
     print("✅ Database initialized")
 
-
+    # ------------------------------
     # Setup all systems/modules
+    # ------------------------------
     await setup_tickets(bot)
-    print("✅ Ticket system loaded")
     await setup_verification(bot)
-    print("✅ Verification system loaded")
     await setup_apprentice_tickets(bot)
-    print("✅ Apprentice ticket system loaded")
     await setup_leaderboard(bot)
-    print("✅ Leaderboard system loaded")
     await setup_admin(bot)
-    print("✅ Admin system loaded")
     await setup_stats(bot)
-    print("✅ Stats system loaded")
     await setup_dumb_things(bot)
-    print("✅ Dumb things system loaded")
+    print("✅ All systems loaded")
 
+    # ------------------------------
+    # Load persistent panels from DB
+    # ------------------------------
+    from persistent_panels import PersistentPanels
+    bot.panels = PersistentPanels(bot, bot.db)
+    await bot.panels.load_all_panels()
+    print("✅ Persistent panels loaded")
+
+    # ------------------------------
     # Sync slash commands
+    # ------------------------------
     try:
         synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} slash command(s)")
     except Exception as e:
         print(f"⚠️ Failed to sync commands: {e}")
 
+    # ------------------------------
     # Set bot status
+    # ------------------------------
     await bot.change_presence(
         activity=discord.Activity(type=discord.ActivityType.watching, name="tickets | /panel")
     )
     print("✅ Bot is ready!")
-
-
 @bot.event
 async def on_error(event, *args, **kwargs):
     print(f"❌ Error in {event}: {args} {kwargs}")
