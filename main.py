@@ -7,6 +7,7 @@ import os
 import asyncio
 from dotenv import load_dotenv
 from database import Database
+from tickets import TicketView, TicketActionView
 
 # Load environment variables
 load_dotenv()
@@ -48,6 +49,10 @@ async def on_ready():
     """Called when bot successfully connects to Discord"""
     print(f"✅ Bot logged in as {bot.user.name} (ID: {bot.user.id})")
     print(f"📊 Connected to {len(bot.guilds)} guild(s)")
+
+    # Re-register persistent views so buttons on old messages keep working
+    bot.add_view(TicketView())        # Panel buttons (category selection)
+    bot.add_view(TicketActionView())  # Ticket channel buttons (Join, Leave, Close, etc.)
 
     # Initialize database
     await bot.db.init()
