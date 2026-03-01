@@ -7,13 +7,11 @@ app = Flask("")
 
 @app.route("/")
 def home():
-    return "🤖 Bot is alive!"
+    return "Bot is running!", 200
 
 def run():
-    port = int(os.environ.get("PORT", 8080))  # Render sets this automatically
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
 def start():
-    # Run the Flask server in a separate thread so your bot can run normally
-    thread = threading.Thread(target=run)
-    thread.start()
+    threading.Thread(target=run).start()
