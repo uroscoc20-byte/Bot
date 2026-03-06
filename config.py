@@ -97,8 +97,8 @@ POINT_VALUES = {
     "UltraSpeaker Express": 8,
     "Weekly Ultra Express": 12,
     "Daily 7-Man Express": 10,
-    "Daily 4-Man Express": 4,
-    "Daily Temple Express": 6,
+    "Daily 4-Man Express": 6,
+    "Daily Temple Express": 9,
     "Ultra Gramiel Express": 11,
 }
 
