@@ -1209,7 +1209,7 @@ def generate_join_commands(category: str, selected_bosses: List[str], room_numbe
         for boss in boss_order:
             if boss in selected_bosses:
                 # Ultra + word together
-                commands.append(f"`/join ultra{boss.replace('Ultra ', '').lower()}-{room_number}`")
+                commands.append(f"```/join ultra{boss.replace('Ultra ', '').lower()}-{room_number}```")
     
     elif category == "Daily 7-Man Express":
         # Order: Lich, Beast, Deimos, Flibbi, Bane, Xyfrag, Kathool, Astral
